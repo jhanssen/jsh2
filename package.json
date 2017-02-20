@@ -1,0 +1,19 @@
+{
+  "name": "jsh",
+  "version": "1.0.0",
+  "description": "JS shell",
+  "main": "index.js",
+  "scripts": {
+    "start": "node ./index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "bash-parser": "^0.4.0",
+    "minimatch": "^3.0.3",
+    "minimist": "^1.2.0",
+    "native-readline": "^1.0.0",
+    "vm2": "^3.2.0"
+  }
+}
