@@ -16,6 +16,7 @@ CodeGenerator.types = {
     CompoundList: require("./compoundlist"),
     Redirect: require("./redirect"),
     Subshell: require("./subshell"),
+    If: require("./if"),
     LogicalExpression: require("./logicalexpression")
 };
 
