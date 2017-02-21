@@ -15,7 +15,8 @@ CodeGenerator.types = {
     CommandExpansion: require("./commandexpansion"),
     CompoundList: require("./compoundlist"),
     Redirect: require("./redirect"),
-    Subshell: require("./subshell")
+    Subshell: require("./subshell"),
+    LogicalExpression: require("./logicalexpression")
 };
 
 CodeGenerator.prototype = {
