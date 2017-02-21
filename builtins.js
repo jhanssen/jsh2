@@ -1,34 +1,45 @@
 /*global require,module,process*/
 const commands = require("./commands");
-const {NodeVM, VMScript} = require("vm2");
 
-// class Eval extends commands.Command {
-//     run(args) {
-//         console.log("eval args");
-//     }
-// }
-
-function* eval(jsh) {
+function eval(jsh) {
     // eval arguments
+    const escape = (obj) => {
+        for (var k in obj) {
+            jsh.shell.parent.set(k, obj[k]);
+        }
+        console.log(jsh.shell.parent.environment);
+    };
     if (arguments.length > 1) {
-        // combine them to a string
-        var e = "";
+        // each argument gets executed in order
         for (var i = 1; i < arguments.length; ++i) {
-            e += arguments[i] + " ";
+            try {
+                jsh.shell.vm.run("" + arguments[i]);
+            } catch (e) {
+                console.error("error running script", e);
+            }
         }
-        try {
-            const script = new VMScript(e);
-            jsh.shell.vm.run(script);
-        } catch (e) {
-            console.error("error running script", e);
-        }
-        console.log(jsh.shell.vm._context);
+        escape(jsh.shell.environment);
     }
     if (jsh.stdin) {
         // eval stdin
-        while (jsh.stdin.open()) {
-            var input = yield* jsh.stdin.read();
-        }
+        var all = [];
+        jsh.stdin.on("data", (data) => {
+            all.push(data);
+        });
+        jsh.stdin.on("close", () => {
+            // make a string out of the datas
+            var str = "";
+            for (var i = 0; i < all.length; ++i) {
+                str += all[i].toString("utf8");
+            }
+            // eval this thing
+            try {
+                jsh.shell.vm.run(str);
+            } catch (e) {
+                console.error("error running script", e);
+            }
+            escape(jsh.shell.environment);
+        });
     }
 }
 

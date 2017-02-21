@@ -6,34 +6,43 @@ const parser = require("bash-parser");
 const commands = require("./commands");
 const {NodeVM} = require("vm2");
 
-function Shell(parent)
+function Shell(options)
 {
-    this.init(parent);
+    this.init(options);
 }
 
 Shell.prototype = {
     vm: undefined,
 
-    init: function init(parent) {
+    init: function init(options) {
         var sb = {};
-        if (parent) {
+        if (options && options.parent) {
             // this is very hacky, I shouldn't have to know about the context
-            this._duplicate(parent.vm._context, sb);
+            this._duplicate(options.parent.vm._context, sb);
 
             // what's set in parent gets propagated to the parent shell on subshell exit
             sb.parent = {};
 
-            this.parent = parent;
+            this.parent = options.parent;
         }
 
         this.vm = new NodeVM({ console: "redirect", sandbox: sb, require: true });
-        this.vm.on("console.log", (...args) => {
-            console.log("got out", ...args);
-            // write to stdout
-        });
-        this.vm.on("console.error", (...args) => {
-            // write to stderr
-        });
+
+        if (options && options.redirect) {
+            this.vm.on("console.log", (...args) => {
+                options.redirect.stdout(...args);
+            });
+            this.vm.on("console.error", (...args) => {
+                options.redirect.stderr(...args);
+            });
+        } else {
+            this.vm.on("console.log", (...args) => {
+                console.log(...args);
+            });
+            this.vm.on("console.error", (...args) => {
+                console.error(...args);
+            });
+        }
         // the rest are lost in the ether
     },
 
@@ -41,6 +50,11 @@ Shell.prototype = {
         var env = {};
         this._duplicate(this.vm._context, env);
         return env;
+    },
+
+    set: function set(key, value) {
+        if (!Shell._disallowedKeys.has(key))
+            this.vm._context[key] = value;
     },
 
     process: function process(line) {
@@ -118,9 +132,9 @@ Shell.prototype = {
         Command: function(cmd) {
             if (cmd.name.type == "Word") {
                 const call = commands.find(cmd.name.text);
-                if (call && typeof call === "function") {
+                if (call && typeof call.cmd === "function") {
                     const jsh = {
-                        shell: this
+                        shell: new Shell({ parent: this, callOpts: call.opts })
                     };
                     // naive approach for now
                     let args = [jsh];
@@ -129,8 +143,8 @@ Shell.prototype = {
                             args.push(cmd.suffix[a].text);
                         }
                     }
-                    if (commands.isGenerator(call)) {
-                        let gen = call.apply(call, args);
+                    if (commands.isGenerator(call.cmd)) {
+                        let gen = call.cmd.apply(call.cmd, args);
                         let res = gen.next();
                         if (!res.done) {
                             // this means we've yielded for stdin
@@ -139,7 +153,7 @@ Shell.prototype = {
                             }
                         }
                     } else {
-                        let ret = call.apply(call, args);
+                        let ret = call.cmd.apply(call.cmd, args);
                         // blah
                     }
                 }

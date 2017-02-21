@@ -13,8 +13,8 @@ const commands = {
     init: function init() {
     },
 
-    add: function add(name, cmd) {
-        commands._commands[name] = cmd;
+    add: function add(name, cmd, opts) {
+        commands._commands[name] = { cmd: cmd, opts: opts };
     },
 
     remove: function remove(name) {
