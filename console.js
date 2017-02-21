@@ -1,12 +1,14 @@
 /*global require,module*/
 const readline = require("native-readline");
 const Shell = require("./shell");
+const jsh = require("./jsh");
 
 const state = {
     shell: undefined,
 
     init: function init() {
         state.shell = new Shell();
+        jsh.shells.push(state.shell);
     },
 
     readline: function readline(line) {

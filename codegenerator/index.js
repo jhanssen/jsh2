@@ -13,17 +13,23 @@ CodeGenerator.types = {
     AssignmentWord: require("./assignmentword"),
     ParameterExpansion: require("./parameterexpansion"),
     CommandExpansion: require("./commandexpansion"),
-    Redirect: require("./redirect")
+    CompoundList: require("./compoundlist"),
+    Redirect: require("./redirect"),
+    Subshell: require("./subshell")
 };
 
 CodeGenerator.prototype = {
     _indent: undefined,
 
-    generate: function generate(ast) {
+    generate: function generate(ast, indent) {
+        if (typeof indent === "number")
+            this._indent = indent;
         var out = this._inc("{\n");
         out += this._generate(ast);
         return out + this._dec("}\n");
     },
+
+    get indent() { return this._indent; },
 
     _generate: function _generate(ast) {
         if (ast.type in CodeGenerator.types) {

@@ -61,9 +61,13 @@ Shell.prototype = {
             this.vm._context[key] = value;
     },
 
-    process: function process(line) {
+    process: function process(input) {
         try {
-            const ast = parser(line, { resolveEnv: this._resolveEnv.bind(this) });
+            var ast;
+            if (typeof input === "string")
+                ast = parser(input, { resolveEnv: this._resolveEnv.bind(this) });
+            else
+                ast = input;
             console.log("ast", JSON.stringify(ast, null, 4));
             this._processAst(ast);
         } catch (e) {
