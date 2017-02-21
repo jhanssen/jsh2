@@ -4,6 +4,7 @@
 
 const parser = require("bash-parser");
 const commands = require("./commands");
+const CodeGenerator = require("./codegenerator");
 const {NodeVM} = require("vm2");
 
 function Shell(options)
@@ -13,6 +14,7 @@ function Shell(options)
 
 Shell.prototype = {
     vm: undefined,
+    generator: undefined,
 
     init: function init(options) {
         var sb = {};
@@ -44,6 +46,8 @@ Shell.prototype = {
             });
         }
         // the rest are lost in the ether
+
+        this.generator = new CodeGenerator();
     },
 
     get environment() {
@@ -59,7 +63,7 @@ Shell.prototype = {
 
     process: function process(line) {
         try {
-            const ast = parser(line, { resolveEnv: this._resolveEnv.bind(this), resolveParameter: this._resolveParameter.bind(this) });
+            const ast = parser(line, { resolveEnv: this._resolveEnv.bind(this) });
             console.log("ast", JSON.stringify(ast, null, 4));
             this._processAst(ast);
         } catch (e) {
@@ -78,13 +82,13 @@ Shell.prototype = {
         return null;
     },
 
-    _resolveParameter: function _resolveParameter(param) {
-        // need to handle . syntax here, i.e. if given foo.bar resolve that to the bar property value of the foo object
-        // but we also need to handle key names with . in them, i.e. global["foo.bar"] = 5
-        if (!Shell._disallowedKeys.has(param) && param in this.vm._context && typeof this.vm._context[param] !== "function")
-            return "" + this.vm._context[param];
-        return "";
-    },
+    // _resolveParameter: function _resolveParameter(param) {
+    //     // need to handle . syntax here, i.e. if given foo.bar resolve that to the bar property value of the foo object
+    //     // but we also need to handle key names with . in them, i.e. global["foo.bar"] = 5
+    //     if (!Shell._disallowedKeys.has(param) && param in this.vm._context && typeof this.vm._context[param] !== "function")
+    //         return "" + this.vm._context[param];
+    //     return "";
+    // },
 
     _duplicate: function(from, to) {
         var seen = [];
@@ -168,6 +172,8 @@ Shell.prototype = {
             if (ast.commands[i].type in this._commands)
                 this._commands[ast.commands[i].type].call(this, ast.commands[i]);
         }
+        const code = this.generator.generate(ast);
+        console.log("generated", code);
     }
 };
 
