@@ -12,6 +12,7 @@ CodeGenerator.types = {
     Command: require("./command"),
     AssignmentWord: require("./assignmentword"),
     ParameterExpansion: require("./parameterexpansion"),
+    CommandExpansion: require("./commandexpansion"),
     Redirect: require("./redirect")
 };
 

@@ -4,21 +4,23 @@ function expand(generator, ast)
 {
     const addify = (str) => {
         if (!str.length)
-            return "";
-        return ` + "${str}"`;
+            return '""';
+        return `"${str}"`;
     };
-    var out = '""';
+    var out = generator._i('var out = "";\n');
     var cur = 0;
     for (var i = 0; i < ast.expansion.length; ++i) {
         var exp = ast.expansion[i];
         // put in text from cur to loc.start
-        out += addify(ast.text.substr(cur, exp.loc.start - cur));
-        // replace the characters with our expansion
-        out += " + " + generator._generate(exp);
+        out += generator._i("out += " + addify(ast.text.substr(cur, exp.loc.start - cur)) + ";\n");
+        //a replace the characters with our expansion
+        out += generator._generate(exp);
         cur = exp.loc.end + 1;
     }
     // add any remaining text
-    out += addify(ast.text.substr(cur));
+    var rem = addify(ast.text.substr(cur));
+    if (rem.length > 2)
+        out += generator._i("out += " + rem + ";\n");
     return out;
 }
 

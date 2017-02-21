@@ -14,8 +14,12 @@ module.exports = function(ast) {
         for (let i = 0; i < ast.prefix.length; ++i)
             out += this._generate(ast.prefix[i]);
     }
+    out += this._inc("let cmdname = () => {\n");
+    out += this._generate(ast.name);
+    out += this._i("return out;\n");
+    out += this._dec("};\n");
     if (ast.name) {
-        out += this._i("let cmd = new jsh.Command(" + this._generate(ast.name) + ");\n");
+        out += this._i("let cmd = new jsh.Command(cmdname());\n");
         if (ast.suffix) {
             for (let i = 0; i < ast.suffix.length; ++i) {
                 switch (ast.suffix[i].type) {
