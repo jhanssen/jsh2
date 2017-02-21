@@ -114,8 +114,8 @@ Shell.prototype = {
                     seen.push(from[k]);
                     seen.push(to[k]);
                     copy(from[k], to[k]);
-                } else if (typeof from[k] == "function") {
-                    // skip functions
+                // } else if (typeof from[k] == "function") {
+                //     // skip functions
                 } else {
                     to[k] = from[k];
                 }
@@ -171,6 +171,8 @@ Shell.prototype = {
     }
 };
 
-Shell._disallowedKeys = new Set(["process", "console", "parent", "Buffer"]);
+Shell._disallowedKeys = new Set(["process", "console", "parent", "Buffer", "VMError",
+                                 "setTimeout", "setInterval", "setImmediate",
+                                 "clearTimeout", "clearInterval", "clearImmediate"]);
 
 module.exports = Shell;
