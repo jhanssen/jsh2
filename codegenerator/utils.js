@@ -7,7 +7,7 @@ function expand(generator, ast)
             return '""';
         return `"${str}"`;
     };
-    var out = generator._i('var out = "";\n');
+    var out = generator._i('let out = "";\n');
     var cur = 0;
     for (var i = 0; i < ast.expansion.length; ++i) {
         var exp = ast.expansion[i];

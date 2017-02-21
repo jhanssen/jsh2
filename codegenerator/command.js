@@ -25,10 +25,16 @@ module.exports = function(ast) {
                 switch (ast.suffix[i].type) {
                 case "Word":
                     // argument
-                    out += this._i("cmd.addArgument(jsh.value(" + this._generate(ast.suffix[i]) + "));\n");
+                    out += this._inc("(() => {\n");
+                    out += this._generate(ast.suffix[i]);
+                    out += this._i("cmd.addArgument(jsh.value(out));\n");
+                    out += this._dec("})();\n");
                     break;
                 case "Redirect":
-                    out += this._i("cmd.redirect(" + this._generate(ast.suffix[i]) + ");\n");
+                    out += this._inc("(() => {\n");
+                    out += this._generate(ast.suffix[i]);
+                    out += this._i("cmd.redirect(out);\n");
+                    out += this._dec("})();\n");
                     break;
                 default:
                     console.error(`Unrecognized suffix for command ${ast.suffix[i].type}`);
