@@ -36,7 +36,8 @@ CodeGenerator.prototype = {
             var out = CodeGenerator.types[ast.type].call(this, ast);
             return out;
         } else {
-            console.error(`Unrecognized ast type ${ast.type}`);
+            this._indent = 0;
+            throw new SyntaxError(`Unrecognized ast type ${ast.type}`);
         }
         return "";
     },
