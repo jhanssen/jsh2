@@ -15,7 +15,7 @@ public:
     typedef std::vector<std::string> Args;
 
     Process(const std::string& path)
-        : mPath(path), mState(Created)
+        : mPath(path), mState(Created), mPid(0), mStatus(0)
     {
     }
 
@@ -25,6 +25,8 @@ public:
     const std::string& path() const { return mPath; }
     const Environ& environ() const { return mEnviron; }
     const Args& args() const { return mArgs; }
+    pid_t pid() const { return mPid; }
+    int status() const { return mStatus; }
 
     enum State { Created, Running, Stopped, Terminated };
     State state() const { return mState; }
@@ -36,8 +38,12 @@ private:
     Environ mEnviron;
     Args mArgs;
     State mState;
+    pid_t mPid;
+    int mStatus;
 
     Signal<std::function<void(Process*, State)> > mStateChanged;
+
+    friend class Job;
 };
 
 #endif

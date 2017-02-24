@@ -11,7 +11,8 @@ class Signal : protected SignalBase
 public:
     typedef uint32_t Key;
 
-    Signal();
+    enum Mode { Direct, Posted };
+    Signal(Mode m = Posted);
 
     Key on(Functor&& func);
     bool off(Key key);
@@ -21,16 +22,17 @@ public:
 
 private:
     std::unordered_map<Key, Functor> mFuncs;
+    Mode mMode;
     Key mNextKey;
 
     // this should possibly be static,
     // bit of a waste to have one mutex per signal
-    Mutex mMutex;
+    mutable Mutex mMutex;
 };
 
 template<typename Functor>
-Signal<Functor>::Signal()
-    : mNextKey()
+Signal<Functor>::Signal(Mode m)
+    : mMode(m), mNextKey()
 {
 }
 
@@ -58,14 +60,20 @@ template<typename Functor>
 template<typename... Args>
 void Signal<Functor>::operator()(Args&&... args) const
 {
-    MutexLocker locker(&mMutex);
-    if (!isLoopThread()) {
-        for (const auto& f : mFuncs) {
-            call(SignalBase::Call<Functor, Args...>(f, std::forward<Args>(args)...));
+    std::unordered_map<Key, Functor> funcs;
+    Mode mode;
+    {
+        MutexLocker locker(&mMutex);
+        mode = mMode;
+        funcs = mFuncs;
+    }
+    if (mode == Posted && !isLoopThread()) {
+        for (auto& f : funcs) {
+            call(SignalBase::Call<Functor, Args...>(std::move(f.second), std::forward<Args>(args)...));
         }
     } else {
-        for (const auto& f : mFuncs) {
-            f(std::forward<Args>(args)...);
+        for (auto& f : funcs) {
+            f.second(std::forward<Args>(args)...);
         }
     }
 }

@@ -28,31 +28,26 @@ protected:
     template<typename Functor, typename... Args>
     struct Call : public CallBase
     {
-        Call(Functor&& f)
-            : func(std::forward<Functor>(f))
+        Call(Functor&& f, std::tuple<Args...>&& a)
+            : func(std::forward<Functor>(f)),
+              args(std::forward<std::tuple<Args...> >(a))
         {
         }
 
         Call(Functor&& f, Args... args)
             : func(std::forward<Functor>(f)),
-              args(std::make_tuple(args...))
+              args(args...)
         {
-        }
-
-        void setArgs(std::tuple<Args...>&& a)
-        {
-            args = std::forward<std::tuple<Args...> >(a);
         }
 
         virtual void call() override
         {
-            apply(func, args);
+            apply(args, func);
         }
 
         virtual CallBase* take() override
         {
-            auto taken = new Call<Functor, Args...>(std::move(func));
-            taken->setArgs(std::move(args));
+            auto taken = new Call<Functor, Args...>(std::move(func), std::move(args));
             return taken;
         }
 
@@ -60,11 +55,11 @@ protected:
         std::tuple<Args...> args;
     };
 
-    void call(CallBase&& base)
+    void call(CallBase&& base) const
     {
         call(base.take());
     }
-    void call(CallBase* base);
+    void call(CallBase* base) const;
 
 private:
     void cleanup();

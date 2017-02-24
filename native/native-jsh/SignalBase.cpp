@@ -6,7 +6,7 @@ std::unordered_set<SignalBase*> SignalBase::sBases;
 
 struct {
     Mutex mutex;
-    std::unordered_map<uv_async_t*, std::vector<SignalBase::CallBase*> > calls;
+    std::unordered_map<const uv_async_t*, std::vector<SignalBase::CallBase*> > calls;
 
     uv_thread_t mainThread;
 } static state;
@@ -50,11 +50,11 @@ void SignalBase::cleanup()
     state.calls.erase(&mAsync);
 }
 
-void SignalBase::call(CallBase* base)
+void SignalBase::call(CallBase* base) const
 {
     {
         MutexLocker locker(&state.mutex);
         state.calls[&mAsync].push_back(base);
     }
-    uv_async_send(&mAsync);
+    uv_async_send(const_cast<uv_async_t*>(&mAsync));
 }

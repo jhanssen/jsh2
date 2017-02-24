@@ -2,19 +2,91 @@
 #define JOB_H
 
 #include "Process.h"
+#include "Signal.h"
 #include <vector>
+#include <unordered_set>
+
+class JobWaiter;
 
 class Job
 {
-    Job();
-    ~Job();
+public:
+    Job()
+        : mPgid(0), mStdin(0), mStdout(0), mStderr(0), mNotified(false), mMode(Foreground)
+    {
+        sJobs.insert(this);
+    }
 
-    void add(Process&& proc);
+    ~Job()
+    {
+        terminate();
+        sJobs.erase(this);
+    }
+
+    void add(Process&& proc) { mProcs.push_back(std::forward<Process>(proc)); }
 
     enum Mode { Foreground, Background };
     void setMode(Mode m, bool resume);
 
-    void start();
+    void start(Mode m);
+    void terminate();
+
+    void write(const uint8_t* data, size_t len);
+
+    bool isStopped() const;
+    bool isTerminated() const;
+
+    static void init();
+    static void deinit();
+
+    Signal<std::function<void(Job*)> >& terminated() { return mTerminated; }
+
+private:
+    bool checkState(pid_t pid, int status);
+    void launch(Process* proc, int in, int out, int err, Mode m, bool is_interactive);
+
+private:
+    std::string mCommand;
+    std::vector<Process> mProcs;
+    pid_t mPgid;
+    struct termios mTmodes;
+    int mStdin, mStdout, mStderr;
+    bool mNotified;
+    Mode mMode;
+    Signal<std::function<void(Job*)> > mTerminated;
+
+    static std::unordered_set<Job*> sJobs;
+
+    friend class JobWaiter;
 };
+
+inline bool Job::isStopped() const
+{
+    for (const auto& p : mProcs) {
+        switch (p.state()) {
+        case Process::Created:
+        case Process::Running:
+            return false;
+        default:
+            break;
+        }
+    }
+    return true;
+}
+
+inline bool Job::isTerminated() const
+{
+    for (const auto& p : mProcs) {
+        switch (p.state()) {
+        case Process::Created:
+        case Process::Running:
+        case Process::Stopped:
+            return false;
+        default:
+            break;
+        }
+    }
+    return true;
+}
 
 #endif

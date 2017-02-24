@@ -41,6 +41,7 @@ NAN_METHOD(init) {
     }
 
     SignalBase::init();
+    Job::init();
 
     auto obj = Nan::New<v8::Object>();
     Nan::Set(obj, Nan::New<v8::String>("pid").ToLocalChecked(), Nan::New<v8::Int32>(state.pid));
