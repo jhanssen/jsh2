@@ -28,8 +28,15 @@ void SignalBase::init()
     }
 }
 
+void SignalBase::deinit()
+{
+}
+
 void SignalBase::call(CallBase* base)
 {
-    MutexLocker locker(&state.mutex);
-    state.calls[&mAsync].push_back(base);
+    {
+        MutexLocker locker(&state.mutex);
+        state.calls[&mAsync].push_back(base);
+    }
+    uv_async_send(&mAsync);
 }
