@@ -38,7 +38,9 @@ template<typename Functor>
 typename Signal<Functor>::Key Signal<Functor>::on(Functor&& func)
 {
     MutexLocker locker(&mMutex);
-    mFuncs[mNextKey++] = std::forward<Functor>(func);
+    Key k = mNextKey++;
+    mFuncs[k] = std::forward<Functor>(func);
+    return k;
 }
 
 template<typename Functor>
