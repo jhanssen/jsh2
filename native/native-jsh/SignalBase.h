@@ -66,7 +66,6 @@ protected:
 
 private:
     uv_async_t mAsync;
-    std::function<void()> mHandler;
 
     static std::unordered_set<SignalBase*> sBases;
 };
