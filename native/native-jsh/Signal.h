@@ -22,6 +22,9 @@ public:
 private:
     std::unordered_map<Key, Functor> mFuncs;
     Key mNextKey;
+
+    // this should possibly be static,
+    // bit of a waste to have one mutex per signal
     Mutex mMutex;
 };
 
