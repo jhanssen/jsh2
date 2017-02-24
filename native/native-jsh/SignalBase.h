@@ -9,7 +9,7 @@ class SignalBase
 {
 public:
     SignalBase() { sBases.insert(this); }
-    ~SignalBase() { sBases.erase(this); }
+    ~SignalBase() { sBases.erase(this); cleanup(); }
 
     static void init();
     static void deinit();
@@ -63,6 +63,9 @@ protected:
         call(base.take());
     }
     void call(CallBase* base);
+
+private:
+    void cleanup();
 
 private:
     uv_async_t mAsync;

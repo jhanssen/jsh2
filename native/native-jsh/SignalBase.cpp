@@ -34,6 +34,12 @@ void SignalBase::deinit()
 {
 }
 
+void SignalBase::cleanup()
+{
+    MutexLocker locker(&state.mutex);
+    state.calls.erase(&mAsync);
+}
+
 void SignalBase::call(CallBase* base)
 {
     {
