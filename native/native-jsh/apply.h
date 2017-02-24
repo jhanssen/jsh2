@@ -1,6 +1,9 @@
 #ifndef APPLY_H
 #define APPLY_H
 
+// taken from http://aherrmann.github.io/programming/2016/02/28/unpacking-tuples-in-cpp14/
+// https://github.com/aherrmann/unpacking_tuples_examples
+
 #include <functional>
 #include <tuple>
 #include <utility>
