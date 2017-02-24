@@ -1,6 +1,9 @@
 #include <nan.h>
 #include <unistd.h>
 #include <signal.h>
+#include "Job.h"
+#include "Process.h"
+#include "SignalBase.h"
 
 struct {
     pid_t pid, pgid;
@@ -36,6 +39,8 @@ NAN_METHOD(init) {
     } else {
         state.pgid = getpgrp();
     }
+
+    SignalBase::init();
 
     auto obj = Nan::New<v8::Object>();
     Nan::Set(obj, Nan::New<v8::String>("pid").ToLocalChecked(), Nan::New<v8::Int32>(state.pid));

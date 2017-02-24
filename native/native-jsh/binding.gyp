@@ -5,7 +5,13 @@
 	"<!(node -e \"require('nan')\")"
       ],
       "target_name": "native-jsh",
-      "sources": [ "jsh.cpp", "utils.cpp" ]
+      "sources": [ "jsh.cpp", "utils.cpp", "SignalBase.cpp" ],
+      "cflags_cc": [ "-std=c++14" ],
+      "xcode_settings": {
+	"OTHER_CPLUSPLUSFLAGS": [
+	  "-std=c++14"
+	]
+      }
     }
   ]
 }
