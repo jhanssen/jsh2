@@ -59,8 +59,14 @@ template<typename... Args>
 void Signal<Functor>::operator()(Args&&... args) const
 {
     MutexLocker locker(&mMutex);
-    for (const auto& f : mFuncs) {
-        call(SignalBase::Call<Functor, Args...>(f, std::forward<Args>(args)...));
+    if (!isLoopThread()) {
+        for (const auto& f : mFuncs) {
+            call(SignalBase::Call<Functor, Args...>(f, std::forward<Args>(args)...));
+        }
+    } else {
+        for (const auto& f : mFuncs) {
+            f(std::forward<Args>(args)...);
+        }
     }
 }
 

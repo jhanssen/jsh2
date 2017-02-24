@@ -14,6 +14,8 @@ public:
     static void init();
     static void deinit();
 
+    static bool isLoopThread();
+
     struct CallBase
     {
         virtual ~CallBase() { }

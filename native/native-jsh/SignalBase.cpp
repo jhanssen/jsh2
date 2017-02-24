@@ -7,10 +7,14 @@ std::unordered_set<SignalBase*> SignalBase::sBases;
 struct {
     Mutex mutex;
     std::unordered_map<uv_async_t*, std::vector<SignalBase::CallBase*> > calls;
+
+    uv_thread_t mainThread;
 } static state;
 
 void SignalBase::init()
 {
+    state.mainThread = uv_thread_self();
+
     auto func = [](uv_async_t* async) {
         std::vector<SignalBase::CallBase*> calls;
         {
@@ -32,6 +36,12 @@ void SignalBase::init()
 
 void SignalBase::deinit()
 {
+}
+
+bool SignalBase::isLoopThread()
+{
+    const auto self = uv_thread_self();
+    return uv_thread_equal(&self, &state.mainThread);
 }
 
 void SignalBase::cleanup()
