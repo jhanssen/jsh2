@@ -50,6 +50,10 @@ NAN_METHOD(restore) {
         Nan::ThrowError("Can't restore state for non-interactive shell");
         return;
     }
+    if (tcsetpgrp(STDIN_FILENO, state.pgid) == -1) {
+        Nan::ThrowError("Unable to set process group for terminal");
+        return;
+    }
     int mode = TCSADRAIN;
     if (info.Length() > 0 && info[0]->IsString()) {
         const std::string str = *Nan::Utf8String(info[0]);
