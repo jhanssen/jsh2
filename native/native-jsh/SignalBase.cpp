@@ -11,20 +11,22 @@ struct {
 
 void SignalBase::init()
 {
+    auto func = [](uv_async_t* async) {
+        std::vector<SignalBase::CallBase*> calls;
+        {
+            MutexLocker locker(&state.mutex);
+            auto it = state.calls.find(async);
+            if (it != state.calls.end())
+                std::swap(it->second, calls);
+        }
+        for (auto c : calls) {
+            c->call();
+            delete c;
+        }
+    };
+
     for (SignalBase* base : sBases) {
-        uv_async_init(uv_default_loop(), &base->mAsync, [](uv_async_t* async) {
-                std::vector<SignalBase::CallBase*> calls;
-                {
-                    MutexLocker locker(&state.mutex);
-                    auto it = state.calls.find(async);
-                    if (it != state.calls.end())
-                        std::swap(it->second, calls);
-                }
-                for (auto c : calls) {
-                    c->call();
-                    delete c;
-                }
-            });
+        uv_async_init(uv_default_loop(), &base->mAsync, func);
     }
 }
 
