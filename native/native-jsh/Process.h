@@ -14,7 +14,10 @@ public:
     typedef std::unordered_map<std::string, std::string> Environ;
     typedef std::vector<std::string> Args;
 
-    Process(const std::string& path);
+    Process(const std::string& path)
+        : mPath(path), mState(Created)
+    {
+    }
 
     void setEnviron(Environ&& environ);
     void setArgs(Args&& args);
@@ -26,7 +29,7 @@ public:
     enum State { Created, Running, Stopped, Terminated };
     State state() const { return mState; }
 
-    Signal<std::function<void(Process*, State)> >& subscribe() { return mSubscribe; }
+    Signal<std::function<void(Process*, State)> >& stateChanged() { return mStateChanged; }
 
 private:
     std::string mPath;
@@ -34,7 +37,7 @@ private:
     Args mArgs;
     State mState;
 
-    Signal<std::function<void(Process*, State)> > mSubscribe;
+    Signal<std::function<void(Process*, State)> > mStateChanged;
 };
 
 #endif
