@@ -25,8 +25,14 @@ NAN_METHOD(init) {
             return;
         }
 
-        tcsetpgrp(STDIN_FILENO, state.pgid);
-        tcgetattr(STDIN_FILENO, &state.tmodes);
+        if (tcsetpgrp(STDIN_FILENO, state.pgid) == -1) {
+            Nan::ThrowError("Unable to set process group for terminal");
+            return;
+        }
+        if (tcgetattr(STDIN_FILENO, &state.tmodes) == -1) {
+            Nan::ThrowError("Unable to get terminal attributes for terminal");
+            return;
+        }
     } else {
         state.pgid = getpgrp();
     }
@@ -59,7 +65,10 @@ NAN_METHOD(restore) {
         }
     }
 
-    tcsetattr(STDIN_FILENO, mode, &state.tmodes);
+    if (tcsetattr(STDIN_FILENO, mode, &state.tmodes) == -1) {
+        Nan::ThrowError("Unable to set terminal attributes for terminal");
+        return;
+    }
 }
 
 NAN_MODULE_INIT(Initialize) {
