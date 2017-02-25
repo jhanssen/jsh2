@@ -166,8 +166,8 @@ inline v8::Handle<v8::Value> makeValue(const std::string& str)
     return scope.Escape(v8str);
 }
 
-template<typename Return, typename Container>
-inline Return get(const Container& container, const Return& key)
+template<typename Return, typename Key, typename Container>
+inline Return get(const Container& container, const Key& key)
 {
     auto it = container.find(key);
     if (it == container.end())

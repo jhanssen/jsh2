@@ -291,7 +291,7 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
     const auto& args = proc->args();
     const auto& environ = proc->environ();
 
-    const auto paths = split(get<std::string>(environ, "path"), ':');
+    const auto paths = split(get<std::string, std::string>(environ, "path"), ':');
     auto pathify = [&paths](const std::string& cmd) {
         if (cmd.empty())
             return cmd;
