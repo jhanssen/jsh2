@@ -6,7 +6,7 @@
 #include <sys/wait.h>
 #include <unordered_map>
 
-std::unordered_set<Job*> Job::sJobs;
+std::unordered_set<std::shared_ptr<Job> > Job::sJobs;
 
 // we're going to need a thread that reads the out/err of the final process in our jobs
 
@@ -23,14 +23,14 @@ public:
         ::close(mPipe[1]);
     }
 
-    void add(Job* job, int out, int err)
+    void add(const std::shared_ptr<Job>& job, int out, int err)
     {
         MutexLocker locker(&mMutex);
         mReads.insert(std::make_pair(job, std::make_pair(out, err)));
         wakeup();
     }
 
-    void remove(Job* job)
+    void remove(const std::shared_ptr<Job>& job)
     {
         MutexLocker locker(&mMutex);
         mReads.erase(job);
@@ -55,7 +55,7 @@ private:
     Mutex mMutex;
     int mPipe[2];
 
-    std::unordered_map<Job*, std::pair<int, int> > mReads;
+    std::map<std::weak_ptr<Job>, std::pair<int, int>, std::owner_less<std::weak_ptr<Job> > > mReads;
 };
 
 void JobReader::wakeup()
@@ -67,6 +67,45 @@ void JobReader::wakeup()
 
 void JobReader::run()
 {
+    auto handleRead = [](Job* job, int fd) {
+    };
+
+    fd_set rdset;
+    for (;;) {
+        // select on everything
+        FD_ZERO(&rdset);
+        FD_SET(mPipe[0], &rdset);
+        int max = mPipe[0];
+        // add the rest
+        {
+            MutexLocker locker(&mMutex);
+            for (const auto& r : mReads) {
+                FD_SET(r.second.first, &rdset);
+                if (r.second.first > max)
+                    max = r.second.first;
+                FD_SET(r.second.second, &rdset);
+                if (r.second.second > max)
+                    max = r.second.second;
+            }
+        }
+        int r = ::select(max + 1, &rdset, 0, 0, 0);
+        if (r > 0) {
+            if (FD_ISSET(mPipe[0], &rdset)) {
+                // drain pipe
+            }
+            {
+                MutexLocker locker(&mMutex);
+                for (const auto& r : mReads) {
+                    if (FD_ISSET(r.second.first, &rdset)) {
+                        handleRead(r.first, r.second.first);
+                    }
+                    if (FD_ISSET(r.second.second, &rdset)) {
+                        handleRead(r.first, r.second.second);
+                    }
+                }
+            }
+        }
+    }
 }
 
 // we also need to handle SIGCHLD
@@ -89,7 +128,7 @@ void JobWaiter::start()
 {
     uv_async_init(uv_default_loop(), &sAsync, [](uv_async_t*) {
             int status;
-            std::vector<Job*> dead;
+            std::vector<std::shared_ptr<Job> > dead;
             for (;;) {
                 const pid_t w = waitpid(-1, &status, WNOHANG | WUNTRACED);
                 if (w > 0) {
@@ -102,6 +141,9 @@ void JobWaiter::start()
                                 dead.push_back(job);
                             }
                             break;
+                        } else {
+                            // bad
+                            break;
                         }
                     }
                     continue;
@@ -109,7 +151,7 @@ void JobWaiter::start()
                 break;
             }
             for (auto job : dead) {
-                delete job;
+                Job::sJobs.erase(job);
             }
         });
 
@@ -206,6 +248,8 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
 
 void Job::start(Mode m)
 {
+    sJobs.insert(shared_from_this());
+
     static bool is_interactive = isatty(STDIN_FILENO) != 0;
 
     int p[2], in, out, lastout, err;

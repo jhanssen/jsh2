@@ -5,22 +5,21 @@
 #include "Signal.h"
 #include <vector>
 #include <unordered_set>
+#include <memory>
 
 class JobWaiter;
 
-class Job
+class Job : public std::enable_shared_from_this<Job>
 {
 public:
     Job()
         : mPgid(0), mStdin(0), mStdout(0), mStderr(0), mNotified(false), mMode(Foreground)
     {
-        sJobs.insert(this);
     }
 
     ~Job()
     {
         terminate();
-        sJobs.erase(this);
     }
 
     void add(Process&& proc) { mProcs.push_back(std::forward<Process>(proc)); }
@@ -55,7 +54,7 @@ private:
     Mode mMode;
     Signal<std::function<void(Job*)> > mTerminated;
 
-    static std::unordered_set<Job*> sJobs;
+    static std::unordered_set<std::shared_ptr<Job> > sJobs;
 
     friend class JobWaiter;
 };
