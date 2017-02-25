@@ -3,6 +3,7 @@
 
 #include "Process.h"
 #include "Signal.h"
+#include <assert.h>
 #include <vector>
 #include <unordered_set>
 #include <memory>
@@ -19,7 +20,7 @@ public:
 
     ~Job()
     {
-        terminate();
+        assert(isTerminated());
     }
 
     void add(Process&& proc) { mProcs.push_back(std::forward<Process>(proc)); }
@@ -38,7 +39,7 @@ public:
     static void init();
     static void deinit();
 
-    Signal<std::function<void(Job*)> >& terminated() { return mTerminated; }
+    Signal<std::function<void(const std::shared_ptr<Job>&)> >& terminated() { return mTerminated; }
 
 private:
     bool checkState(pid_t pid, int status);
@@ -52,7 +53,7 @@ private:
     int mStdin, mStdout, mStderr;
     bool mNotified;
     Mode mMode;
-    Signal<std::function<void(Job*)> > mTerminated;
+    Signal<std::function<void(const std::shared_ptr<Job>&)> > mTerminated;
 
     static std::unordered_set<std::shared_ptr<Job> > sJobs;
 

@@ -5,10 +5,19 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unordered_map>
+#include <map>
 
 std::unordered_set<std::shared_ptr<Job> > Job::sJobs;
 
 // we're going to need a thread that reads the out/err of the final process in our jobs
+
+class JobReader;
+class JobWaiter;
+
+struct {
+    std::shared_ptr<JobReader> reader;
+    std::shared_ptr<JobWaiter> waiter;
+} static state;
 
 class JobReader
 {
@@ -67,7 +76,11 @@ void JobReader::wakeup()
 
 void JobReader::run()
 {
-    auto handleRead = [](Job* job, int fd) {
+    auto handleRead = [](std::weak_ptr<Job> weak, int fd) -> bool {
+        if (std::shared_ptr<Job> job = weak.lock()) {
+            return true;
+        }
+        return false;
     };
 
     fd_set rdset;
@@ -152,6 +165,7 @@ void JobWaiter::start()
             }
             for (auto job : dead) {
                 Job::sJobs.erase(job);
+                state.reader->remove(job);
             }
         });
 
@@ -160,11 +174,6 @@ void JobWaiter::start()
             uv_async_send(&sAsync);
         }, SIGCHLD);
 }
-
-struct {
-    JobReader reader;
-    JobWaiter waiter;
-} static state;
 
 bool Job::checkState(pid_t pid, int status)
 {
@@ -243,7 +252,8 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
         envp[idx++] = strdup((env.first + "=" + env.second).c_str());
     }
 
-    execvpe(proc->path().c_str(), const_cast<char*const*>(argv), envp);
+    // we need to find proc->path() in $PATH
+    execve(proc->path().c_str(), const_cast<char*const*>(argv), envp);
 }
 
 void Job::start(Mode m)
@@ -265,7 +275,7 @@ void Job::start(Mode m)
     mStdout = p[0];
     lastout = p[1];
 
-    state.reader.add(this, mStdout, mStderr);
+    state.reader->add(shared_from_this(), mStdout, mStderr);
 
     pid_t pid;
     Process* start = &mProcs[0];
@@ -309,15 +319,21 @@ void Job::start(Mode m)
 
 void Job::terminate()
 {
-    state.reader.remove(this);
+    if (!isTerminated())
+        kill(-mPgid, SIGTERM);
 }
 
 void Job::init()
 {
-    state.reader.start();
-    state.waiter.start();
+    state.reader.reset(new JobReader);
+    state.waiter.reset(new JobWaiter);
+
+    state.reader->start();
+    state.waiter->start();
 }
 
 void Job::deinit()
 {
+    state.reader.reset();
+    state.waiter.reset();
 }
