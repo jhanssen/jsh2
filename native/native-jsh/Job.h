@@ -3,6 +3,7 @@
 
 #include "Process.h"
 #include "Signal.h"
+#include "Buffer.h"
 #include <assert.h>
 #include <vector>
 #include <unordered_set>
@@ -40,6 +41,8 @@ public:
     static void deinit();
 
     Signal<std::function<void(const std::shared_ptr<Job>&)> >& terminated() { return mTerminated; }
+    Signal<std::function<void(const std::shared_ptr<Job>&, const Buffer&)> >& stdout() { return mStdoutSignal; }
+    Signal<std::function<void(const std::shared_ptr<Job>&, const Buffer&)> >& stderr() { return mStderrSignal; }
 
 private:
     bool checkState(pid_t pid, int status);
@@ -54,6 +57,7 @@ private:
     bool mNotified;
     Mode mMode;
     Signal<std::function<void(const std::shared_ptr<Job>&)> > mTerminated;
+    Signal<std::function<void(const std::shared_ptr<Job>&, const Buffer&)> > mStdoutSignal, mStderrSignal;
 
     static std::unordered_set<std::shared_ptr<Job> > sJobs;
 
