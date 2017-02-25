@@ -20,6 +20,8 @@ public:
     size_t read(uint8_t* data, size_t len);
     Data readAll();
 
+    void clear() { mSize = mOffset = 0; mDatas = {}; }
+
 private:
     size_t mSize, mOffset;
     std::queue<Data> mDatas;
@@ -44,8 +46,11 @@ inline size_t Buffer::read(uint8_t* data, size_t len)
     size_t rem = len;
     size_t rd = 0;
     for (;;) {
-        if (mDatas.empty())
+        if (mDatas.empty()) {
+            assert(mSize >= rd);
+            mSize -= rd;
             return rd;
+        }
         auto front = mDatas.front();
         if (front.size() - mOffset >= rem) {
             // read rem bytes, increase mOffset so we start
@@ -56,6 +61,8 @@ inline size_t Buffer::read(uint8_t* data, size_t len)
                 mDatas.pop();
                 mOffset = 0;
             }
+            assert(mSize >= rd + rem);
+            mSize -= rd + rem;
             return rd + rem;
         } else {
             // read the entire data, decrease rem
@@ -70,6 +77,14 @@ inline size_t Buffer::read(uint8_t* data, size_t len)
 
 inline Buffer::Data Buffer::readAll()
 {
+    if (mDatas.size() == 1 && !mOffset) {
+        // optimized case
+        Data d = std::move(mDatas.front());
+        mDatas.pop();
+        mSize = 0;
+        return d;
+    }
+
     Data d(mSize);
     read(&d[0], mSize);
     return d;

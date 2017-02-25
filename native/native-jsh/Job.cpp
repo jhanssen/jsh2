@@ -2,6 +2,7 @@
 #include "utils.h"
 #include <uv.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unordered_map>
@@ -25,6 +26,9 @@ public:
     JobReader()
     {
         ::pipe(mPipe);
+
+        const int r = fcntl(mPipe[0], F_GETFL);
+        fcntl(mPipe[0], F_SETFL, r | O_NONBLOCK);
     }
     ~JobReader()
     {
@@ -34,6 +38,13 @@ public:
 
     void add(const std::shared_ptr<Job>& job, int out, int err)
     {
+        // make read pipes non-blocking
+        int r = fcntl(out, F_GETFL);
+        fcntl(out, F_SETFL, r | O_NONBLOCK);
+
+        r = fcntl(err, F_GETFL);
+        fcntl(err, F_SETFL, r | O_NONBLOCK);
+
         MutexLocker locker(&mMutex);
         mReads.insert(std::make_pair(job, std::make_pair(out, err)));
         wakeup();
@@ -76,9 +87,22 @@ void JobReader::wakeup()
 
 void JobReader::run()
 {
-    auto handleRead = [](std::weak_ptr<Job> weak, int fd) -> bool {
-        if (std::shared_ptr<Job> job = weak.lock()) {
-            return true;
+    auto handleRead = [](const std::shared_ptr<Job>& weak, int fd, Buffer& buffer) -> bool {
+        int e;
+        uint8_t buf[32768];
+        for (;;) {
+            EINTRWRAP(e, ::read(fd, buf, sizeof(buf)));
+            if (e == -1) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    return true;
+                return false;
+            }
+            if (e == 0) {
+                // weird
+                return false;
+            }
+
+            buffer.add(buf, e);
         }
         return false;
     };
@@ -107,14 +131,39 @@ void JobReader::run()
                 // drain pipe
             }
             {
+                Buffer buffer;
+
                 MutexLocker locker(&mMutex);
+                std::vector<std::weak_ptr<Job> > bad;
                 for (const auto& r : mReads) {
+                    bool handled = true;
                     if (FD_ISSET(r.second.first, &rdset)) {
-                        handleRead(r.first, r.second.first);
+                        handled = false;
+                        if (std::shared_ptr<Job> job = r.first.lock()) {
+                            if (handleRead(job, r.second.first, buffer)) {
+                                handled = true;
+                                job->stdout()(job, buffer);
+                                buffer.clear();
+                            }
+                        }
                     }
                     if (FD_ISSET(r.second.second, &rdset)) {
-                        handleRead(r.first, r.second.second);
+                        handled = false;
+                        if (std::shared_ptr<Job> job = r.first.lock()) {
+                            if (handleRead(job, r.second.second, buffer)) {
+                                handled = true;
+                                job->stderr()(job, buffer);
+                                buffer.clear();
+                            }
+                        }
                     }
+                    if (!handled) {
+                        // bad job, take it out
+                        bad.push_back(r.first);
+                    }
+                }
+                for (const auto j : bad) {
+                    mReads.erase(j);
                 }
             }
         }
