@@ -166,4 +166,33 @@ inline v8::Handle<v8::Value> makeValue(const std::string& str)
     return scope.Escape(v8str);
 }
 
+template<typename Return, typename Container>
+inline Return get(const Container& container, const Return& key)
+{
+    auto it = container.find(key);
+    if (it == container.end())
+        return Return();
+    return it->second;
+}
+
+inline std::vector<std::string> split(const std::string& str, char delim)
+{
+    std::vector<std::string> ret;
+    if (str.empty())
+        return ret;
+    const char* cur = str.c_str();
+    const char* prev = cur;
+    while (*cur != '\0') {
+        if (*cur == delim) {
+            // from prev to cur
+            ret.push_back(std::string(prev, cur - prev));
+            prev = cur + 1;
+        }
+        ++cur;
+    }
+    // final one
+    ret.push_back(std::string(prev, cur - prev));
+    return ret;
+}
+
 #endif

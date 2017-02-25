@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <unordered_map>
 #include <map>
 
@@ -289,6 +290,29 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
     // build argv and envp
     const auto& args = proc->args();
     const auto& environ = proc->environ();
+
+    const auto paths = split(get<std::string>(environ, "path"), ':');
+    auto pathify = [&paths](const std::string& cmd) {
+        if (cmd.empty())
+            return cmd;
+        if (cmd[0] == '/')
+            return cmd;
+
+        int r;
+        struct stat st;
+        for (auto p : paths) {
+            auto cur = p + '/' + cmd;
+            r = stat(cur.c_str(), &st);
+            if (r == 0) {
+                if ((st.st_mode & (S_IFREG|S_IXUSR)) == (S_IFREG|S_IXUSR)) {
+                    // success
+                    return cur;
+                }
+            }
+        }
+        return cmd;
+    };
+
     const char** argv = reinterpret_cast<const char**>(malloc((args.size() + 1) * sizeof(char*)));
     argv[args.size()] = 0;
     int idx = 0;
@@ -302,7 +326,7 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
     }
 
     // we need to find proc->path() in $PATH
-    execve(proc->path().c_str(), const_cast<char*const*>(argv), envp);
+    execve(pathify(proc->path()).c_str(), const_cast<char*const*>(argv), envp);
 }
 
 void Job::start(Mode m)
