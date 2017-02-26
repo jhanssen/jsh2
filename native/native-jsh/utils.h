@@ -24,28 +24,20 @@ public:
     }
     ~Mutex()
     {
-        if (tLocked)
-            unlock();
         uv_mutex_destroy(&mMutex);
     }
 
     void lock()
     {
         uv_mutex_lock(&mMutex);
-        tLocked = true;
     }
     void unlock()
     {
-        assert(tLocked);
-        tLocked = false;
         uv_mutex_unlock(&mMutex);
     }
 
-    bool locked() const { return tLocked; }
-
 private:
     uv_mutex_t mMutex;
-    thread_local static bool tLocked;
 
     friend class Condition;
 };
@@ -61,18 +53,7 @@ public:
 
     ~MutexLocker()
     {
-        if (mMutex->locked())
-            mMutex->unlock();
-    }
-
-    void unlock()
-    {
         mMutex->unlock();
-    }
-
-    void relock()
-    {
-        mMutex->lock();
     }
 
 private:
