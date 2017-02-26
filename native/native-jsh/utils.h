@@ -195,4 +195,12 @@ inline std::vector<std::string> split(const std::string& str, char delim)
     return ret;
 }
 
+// helper for std string
+namespace Nan {
+inline void ThrowError(const std::string& err)
+{
+    Nan::ThrowError(err.c_str());
+}
+}
+
 #endif

@@ -5,6 +5,11 @@
 #include "Process.h"
 #include "SignalBase.h"
 
+using std::bind;
+using std::placeholders::_1;
+using std::placeholders::_2;
+using std::placeholders::_3;
+
 struct {
     pid_t pid, pgid;
     bool is_interactive;
@@ -86,12 +91,37 @@ NAN_METHOD(restore) {
 }
 
 namespace job {
+
 class NanJob : public Nan::ObjectWrap
 {
 public:
     NanJob(std::shared_ptr<Job>&& j)
-        : job(std::move(j))
+        : job(std::move(j)), id(nextId++)
     {
+        auto onout = [](const auto& /*job*/, auto& buffer, auto cb) {
+            Nan::HandleScope scope;
+            auto data = buffer.readAll();
+            auto nodeBuffer = v8::Local<v8::Value>::Cast(Nan::NewBuffer(reinterpret_cast<char*>(&data[0]), data.size()).ToLocalChecked());
+            if (!cb->IsEmpty())
+                cb->Call(1, &nodeBuffer);
+        };
+
+        // apparently we can't bind Nan::Callback as value
+        job->stdout().on(bind(onout, _1, _2, &onStdOut));
+        job->stderr().on(bind(onout, _1, _2, &onStdErr));
+
+        job->stateChanged().on(bind([](const auto& job, auto state, auto cb) {
+                    Nan::HandleScope scope;
+                    auto nodeState = v8::Local<v8::Value>::Cast(Nan::New<v8::Uint32>(state));
+                    if (!cb->IsEmpty())
+                        cb->Call(1, &nodeState);
+                }, _1, _2, &onStateChanged));
+    }
+    ~NanJob()
+    {
+        job->stdout().off();
+        job->stderr().off();
+        job->stateChanged().off();
     }
 
     void Wrap(const v8::Local<v8::Object>& object)
@@ -100,7 +130,14 @@ public:
     }
 
     std::shared_ptr<Job> job;
+    uint32_t id;
+
+    Nan::Callback onStdOut, onStdErr, onStateChanged;
+
+    static uint32_t nextId;
 };
+
+uint32_t NanJob::nextId = 0;
 
 NAN_METHOD(New) {
     if (!info.IsConstructCall()) {
@@ -109,14 +146,128 @@ NAN_METHOD(New) {
     }
 
     auto job = new NanJob(std::shared_ptr<Job>(new Job));
-    job->Wrap(info.This());
+
+    auto thiz = info.This();
+    Nan::Set(thiz, Nan::New("id").ToLocalChecked(), Nan::New<v8::Uint32>(job->id));
+
+    job->Wrap(thiz);
+}
+
+NAN_METHOD(Start) {
+    SignalBase::init();
+    Job::init();
+
+    auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
+    Job::Mode m = Job::Foreground;
+    if (info.Length() > 0) {
+        if (!info[0]->IsUint32()) {
+            Nan::ThrowError("Job.start takes a mode (number) argument");
+            return;
+        }
+        const uint32_t mm = v8::Local<v8::Uint32>::Cast(info[0])->Value();
+        switch (mm) {
+        case Job::Foreground:
+            m = Job::Foreground;
+            break;
+        case Job::Background:
+            m = Job::Background;
+            break;
+        default:
+            Nan::ThrowError("Job.start takes a mode argument");
+            return;
+        }
+    }
+    job->start(m);
 }
 
 NAN_METHOD(Add) {
-    printf("adding thing to job\n");
+    if (info.Length() < 1 || !info[0]->IsObject()) {
+        Nan::ThrowError("Job.add takes an object argument");
+        return;
+    }
+    // extract the relevant parts of our process argument
+
+    // path is required, environ and args are optional
+    auto obj = v8::Local<v8::Object>::Cast(info[0]);
+    auto maybePath = Nan::Get(obj, Nan::New("path").ToLocalChecked());
+    if (maybePath.IsEmpty()) {
+        Nan::ThrowError("Job.add needs a path");
+        return;
+    }
+    auto path = maybePath.ToLocalChecked();
+    if (!path->IsString()) {
+        Nan::ThrowError("Job.add path needs to be a string");
+        return;
+    }
+
+    Process proc(*Nan::Utf8String(path));
+
+    auto maybeArgs = Nan::Get(obj, Nan::New("args").ToLocalChecked());
+    if (!maybeArgs.IsEmpty()) {
+        auto args = maybeArgs.ToLocalChecked();
+        if (args->IsArray()) {
+            auto argsArray = v8::Local<v8::Array>::Cast(args);
+            Process::Args procArgs;
+            for (uint32_t i = 0; i < argsArray->Length(); ++i) {
+                if (!argsArray->Get(i)->IsString()) {
+                    Nan::ThrowError("Job.add args elements needs to be strings");
+                    return;
+                }
+                procArgs.push_back(*Nan::Utf8String(argsArray->Get(i)));
+            }
+            proc.setArgs(std::move(procArgs));
+        }
+    }
+
+    auto maybeEnviron = Nan::Get(obj, Nan::New("environ").ToLocalChecked());
+    if (!maybeEnviron.IsEmpty()) {
+        auto environ = maybeEnviron.ToLocalChecked();
+        if (environ->IsObject()) {
+            auto environObject = v8::Local<v8::Object>::Cast(environ);
+            auto maybeProps = Nan::GetOwnPropertyNames(environObject);
+            if (maybeProps.IsEmpty()) {
+                Nan::ThrowError("Job.add environ can't get properties");
+                return;
+            }
+            auto props = maybeProps.ToLocalChecked();
+            if (!props->IsArray()) {
+                // seems impossible?
+                Nan::ThrowError("Job.add environ props is not an array");
+                return;
+            }
+            Process::Environ procEnviron;
+            auto propsArray = v8::Local<v8::Array>::Cast(props);
+            for (uint32_t i = 0; i < propsArray->Length(); ++i) {
+                auto val = environObject->Get(propsArray->Get(i));
+                procEnviron[*Nan::Utf8String(propsArray->Get(i))] = *Nan::Utf8String(val);
+            }
+            proc.setEnviron(std::move(procEnviron));
+        }
+    }
+
     auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
+    job->add(std::move(proc));
 }
+
+NAN_METHOD(On) {
+    auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder());
+    if (info.Length() >= 2 && info[0]->IsString() && info[1]->IsFunction()) {
+        const std::string str = *Nan::Utf8String(info[0]);
+        if (str == "stdout") {
+            job->onStdOut.Reset(v8::Local<v8::Function>::Cast(info[1]));
+        } else if (str == "stderr") {
+            job->onStdErr.Reset(v8::Local<v8::Function>::Cast(info[1]));
+        } else if (str == "stateChanged") {
+            job->onStateChanged.Reset(v8::Local<v8::Function>::Cast(info[1]));
+        } else {
+            Nan::ThrowError("Invalid Job.on: " + str);
+        }
+    } else {
+        Nan::ThrowError("Invalid arguments to Job.on");
+    }
 }
+
+} // namespace job
 
 NAN_MODULE_INIT(Initialize) {
     NAN_EXPORT(target, init);
@@ -131,6 +282,12 @@ NAN_MODULE_INIT(Initialize) {
         ctorInst->SetInternalFieldCount(1);
 
         Nan::SetPrototypeMethod(ctor, "add", job::Add);
+        Nan::SetPrototypeMethod(ctor, "on", job::On);
+        Nan::SetPrototypeMethod(ctor, "start", job::Start);
+
+        auto ctorFunc = Nan::GetFunction(ctor).ToLocalChecked();
+        Nan::Set(ctorFunc, Nan::New("Foreground").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Foreground));
+        Nan::Set(ctorFunc, Nan::New("Background").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Background));
 
         Nan::Set(target, cname, Nan::GetFunction(ctor).ToLocalChecked());
     }
