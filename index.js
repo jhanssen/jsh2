@@ -10,6 +10,9 @@ nodeCleanup(() => {
     nativeJsh.deinit();
 });
 
+const job = new nativeJsh.Job();
+job.add("foobar");
+
 const JSH = require("./lib/jsh/index");
 const jsh = new JSH();
 //console.log(jsh.commands);

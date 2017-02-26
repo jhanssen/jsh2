@@ -85,9 +85,55 @@ NAN_METHOD(restore) {
     }
 }
 
+namespace job {
+class NanJob : public Nan::ObjectWrap
+{
+public:
+    NanJob(std::shared_ptr<Job>&& j)
+        : job(std::move(j))
+    {
+    }
+
+    void Wrap(const v8::Local<v8::Object>& object)
+    {
+        Nan::ObjectWrap::Wrap(object);
+    }
+
+    std::shared_ptr<Job> job;
+};
+
+NAN_METHOD(New) {
+    if (!info.IsConstructCall()) {
+        Nan::ThrowError("Need to instantiate Job through new()");
+        return;
+    }
+
+    auto job = new NanJob(std::shared_ptr<Job>(new Job));
+    job->Wrap(info.This());
+}
+
+NAN_METHOD(Add) {
+    printf("adding thing to job\n");
+    auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
+}
+}
+
 NAN_MODULE_INIT(Initialize) {
     NAN_EXPORT(target, init);
+    NAN_EXPORT(target, deinit);
     NAN_EXPORT(target, restore);
+
+    {
+        auto cname = Nan::New("Job").ToLocalChecked();
+        auto ctor = Nan::New<v8::FunctionTemplate>(job::New);
+        auto ctorInst = ctor->InstanceTemplate();
+        ctor->SetClassName(cname);
+        ctorInst->SetInternalFieldCount(1);
+
+        Nan::SetPrototypeMethod(ctor, "add", job::Add);
+
+        Nan::Set(target, cname, Nan::GetFunction(ctor).ToLocalChecked());
+    }
 }
 
 NODE_MODULE(nativeJsh, Initialize)
