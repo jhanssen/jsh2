@@ -211,6 +211,8 @@ private:
     static uv_async_t sAsync;
 };
 
+uv_async_t JobWaiter::sAsync;
+
 void JobWaiter::start()
 {
     uv_async_init(uv_default_loop(), &sAsync, [](uv_async_t*) {
