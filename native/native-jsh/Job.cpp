@@ -25,6 +25,7 @@ class JobReader
 {
 public:
     JobReader()
+        : mStopped(false)
     {
         ::pipe(mPipe);
 
@@ -62,6 +63,16 @@ public:
         uv_thread_create(&mThread, JobReader::run, this);
     }
 
+    void stop()
+    {
+        {
+            MutexLocker locker(&mMutex);
+            mStopped = true;
+        }
+        wakeup();
+        uv_thread_join(&mThread);
+    }
+
 private:
     void run();
     void wakeup();
@@ -75,6 +86,7 @@ private:
     uv_thread_t mThread;
     Mutex mMutex;
     int mPipe[2];
+    bool mStopped;
 
     std::map<std::weak_ptr<Job>, std::pair<int, int>, std::owner_less<std::weak_ptr<Job> > > mReads;
 };
@@ -117,6 +129,9 @@ void JobReader::run()
         // add the rest
         {
             MutexLocker locker(&mMutex);
+            if (mStopped)
+                break;
+
             for (const auto& r : mReads) {
                 FD_SET(r.second.first, &rdset);
                 if (r.second.first > max)
@@ -130,6 +145,14 @@ void JobReader::run()
         if (r > 0) {
             if (FD_ISSET(mPipe[0], &rdset)) {
                 // drain pipe
+                char c;
+                int e;
+                for (;;) {
+                    EINTRWRAP(e, ::read(mPipe[0], &c, 1));
+                    if (e != 1)
+                        break;
+                }
+
             }
             {
                 Buffer buffer;
@@ -180,6 +203,7 @@ public:
     ~JobWaiter() { }
 
     void start();
+    void stop();
 
 private:
     uv_signal_t mHandler;
@@ -223,6 +247,11 @@ void JobWaiter::start()
     uv_signal_start(&mHandler, [](uv_signal_t*, int) {
             uv_async_send(&sAsync);
         }, SIGCHLD);
+}
+
+void JobWaiter::stop()
+{
+    uv_signal_stop(&mHandler);
 }
 
 bool Job::checkState(pid_t pid, int status)
@@ -407,6 +436,10 @@ void Job::init()
 
 void Job::deinit()
 {
+    if (state.reader)
+        state.reader->stop();
     state.reader.reset();
+    if (state.waiter)
+        state.waiter->stop();
     state.waiter.reset();
 }

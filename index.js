@@ -5,6 +5,11 @@
 const nativeJsh = require("native-jsh");
 const native = nativeJsh.init();
 
+const nodeCleanup = require('node-cleanup');
+nodeCleanup(() => {
+    nativeJsh.deinit();
+});
+
 const JSH = require("./lib/jsh/index");
 const jsh = new JSH();
 //console.log(jsh.commands);

@@ -51,6 +51,10 @@ NAN_METHOD(init) {
     info.GetReturnValue().Set(obj);
 }
 
+NAN_METHOD(deinit) {
+    Job::deinit();
+}
+
 NAN_METHOD(restore) {
     if (!state.is_interactive) {
         Nan::ThrowError("Can't restore state for non-interactive shell");
