@@ -351,7 +351,7 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
     argv[args.size() + 1] = 0;
     int idx = 0;
     for (const std::string& arg : args) {
-        argv[idx++] = arg.c_str();
+        argv[++idx] = arg.c_str();
     }
     char** envp = reinterpret_cast<char**>(malloc((environ.size() + 1) * sizeof(char*)));
     idx = 0;
