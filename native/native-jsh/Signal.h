@@ -2,6 +2,7 @@
 #define SIGNAL_H
 
 #include <unordered_map>
+#include <tuple>
 #include "SignalBase.h"
 #include "utils.h"
 
@@ -16,6 +17,7 @@ public:
 
     Key on(Functor&& func);
     bool off(Key key);
+    void off();
 
     template<typename... Args>
     void operator()(Args&&... args) const;
@@ -57,6 +59,13 @@ bool Signal<Functor>::off(Key key)
 }
 
 template<typename Functor>
+void Signal<Functor>::off()
+{
+    MutexLocker locker(&mMutex);
+    mFuncs.clear();
+}
+
+template<typename Functor>
 template<typename... Args>
 void Signal<Functor>::operator()(Args&&... args) const
 {
@@ -73,7 +82,8 @@ void Signal<Functor>::operator()(Args&&... args) const
         }
     } else {
         for (auto& f : funcs) {
-            f.second(std::forward<Args>(args)...);
+            std::tuple<typename std::remove_reference<Args>::type...> tup(std::forward<Args>(args)...);
+            apply(tup, f.second);
         }
     }
 }

@@ -1,28 +1,24 @@
 #ifndef APPLY_H
 #define APPLY_H
 
-// taken from http://aherrmann.github.io/programming/2016/02/28/unpacking-tuples-in-cpp14/
-// https://github.com/aherrmann/unpacking_tuples_examples
-
 #include <functional>
 #include <tuple>
 #include <utility>
 
-template <class F, std::size_t... Is>
-constexpr auto index_apply_impl(F f,
-                                std::index_sequence<Is...>) {
-    return f(std::integral_constant<std::size_t, Is> {}...);
+// taken from http://en.cppreference.com/w/cpp/utility/integer_sequence
+
+template<typename Func, typename Tup, std::size_t... index>
+decltype(auto) apply_helper(Func&& func, Tup&& tup, std::index_sequence<index...>)
+{
+    return func(std::get<index>(std::forward<Tup>(tup))...);
 }
 
-template <std::size_t N, class F>
-constexpr auto index_apply(F f) {
-    return index_apply_impl(f, std::make_index_sequence<N>{});
+template<typename Func, typename Tup>
+decltype(auto) apply(Tup&& tup, Func&& func)
+{
+    constexpr auto Size = std::tuple_size<typename std::decay<Tup>::type>::value;
+    return apply_helper(std::forward<Func>(func),
+                        std::forward<Tup>(tup),
+                        std::make_index_sequence<Size>{});
 }
-
-template <class Tuple, class F>
-constexpr auto apply(Tuple t, F f) {
-    return index_apply<std::tuple_size<Tuple>{}>(
-        [&](auto... Is) { return f(std::get<Is>(t)...); });
-}
-
 #endif

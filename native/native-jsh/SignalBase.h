@@ -28,15 +28,18 @@ protected:
     template<typename Functor, typename... Args>
     struct Call : public CallBase
     {
-        Call(Functor&& f, std::tuple<Args...>&& a)
+    public:
+        typedef std::tuple<typename std::remove_reference<Args>::type...> Decayed;
+
+        Call(Functor&& f, Decayed&& a)
             : func(std::forward<Functor>(f)),
-              args(std::forward<std::tuple<Args...> >(a))
+              args(std::forward<Decayed>(a))
         {
         }
 
-        Call(Functor&& f, Args... args)
+        Call(Functor&& f, Args... a)
             : func(std::forward<Functor>(f)),
-              args(args...)
+              args(std::forward<Args>(a)...)
         {
         }
 
@@ -52,7 +55,7 @@ protected:
         }
 
         Functor func;
-        std::tuple<Args...> args;
+        Decayed args;
     };
 
     void call(CallBase&& base) const

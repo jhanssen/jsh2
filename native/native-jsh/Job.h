@@ -40,9 +40,10 @@ public:
     static void init();
     static void deinit();
 
-    Signal<std::function<void(const std::shared_ptr<Job>&)> >& terminated() { return mTerminated; }
-    Signal<std::function<void(const std::shared_ptr<Job>&, const Buffer&)> >& stdout() { return mStdoutSignal; }
-    Signal<std::function<void(const std::shared_ptr<Job>&, const Buffer&)> >& stderr() { return mStderrSignal; }
+    enum State { Stopped, Terminated };
+    Signal<std::function<void(const std::shared_ptr<Job>&, State)> >& stateChanged() { return mStateChanged; }
+    Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> >& stdout() { return mStdoutSignal; }
+    Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> >& stderr() { return mStderrSignal; }
 
 private:
     bool checkState(pid_t pid, int status);
@@ -56,8 +57,8 @@ private:
     int mStdin, mStdout, mStderr;
     bool mNotified;
     Mode mMode;
-    Signal<std::function<void(const std::shared_ptr<Job>&)> > mTerminated;
-    Signal<std::function<void(const std::shared_ptr<Job>&, const Buffer&)> > mStdoutSignal, mStderrSignal;
+    Signal<std::function<void(const std::shared_ptr<Job>&, State)> > mStateChanged;
+    Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> > mStdoutSignal, mStderrSignal;
 
     static std::unordered_set<std::shared_ptr<Job> > sJobs;
 

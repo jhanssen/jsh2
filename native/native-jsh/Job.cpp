@@ -166,7 +166,7 @@ void JobReader::run()
                         if (std::shared_ptr<Job> job = r.first.lock()) {
                             if (handleRead(job, r.second.first, buffer)) {
                                 handled = true;
-                                job->stdout()(job, buffer);
+                                job->stdout()(job, std::move(buffer));
                                 buffer.clear();
                             }
                         }
@@ -176,7 +176,7 @@ void JobReader::run()
                         if (std::shared_ptr<Job> job = r.first.lock()) {
                             if (handleRead(job, r.second.second, buffer)) {
                                 handled = true;
-                                job->stderr()(job, buffer);
+                                job->stderr()(job, std::move(buffer));
                                 buffer.clear();
                             }
                         }
@@ -225,9 +225,11 @@ void JobWaiter::start()
                         if (job->checkState(w, status)) {
                             if (job->isTerminated()) {
                                 // if our job is completely done we should notify someone(tm)
-                                job->terminated()(job);
+                                job->stateChanged()(job, Job::Terminated);
                                 // and die
                                 dead.push_back(job);
+                            } else if (job->isStopped()) {
+                                job->stateChanged()(job, Job::Stopped);
                             }
                             break;
                         } else {

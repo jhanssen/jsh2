@@ -10,7 +10,19 @@ public:
     typedef std::vector<uint8_t> Data;
 
     Buffer() : mSize(0), mOffset(0) { }
+    Buffer(Buffer&& other)
+        : mSize(other.mSize), mOffset(other.mOffset), mDatas(std::move(other.mDatas))
+    {
+    }
     ~Buffer() { }
+
+    Buffer& operator=(Buffer&& other)
+    {
+        mSize = other.mSize;
+        mOffset = other.mOffset;
+        mDatas = std::move(other.mDatas);
+        return *this;
+    }
 
     void add(Data&& data);
     void add(const uint8_t* data, size_t len);
@@ -23,6 +35,9 @@ public:
     void clear() { mSize = mOffset = 0; mDatas = {}; }
 
 private:
+    Buffer(const Buffer&) = delete;
+    Buffer& operator=(const Buffer&) = delete;
+
     size_t mSize, mOffset;
     std::queue<Data> mDatas;
 };
