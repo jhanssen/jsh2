@@ -145,6 +145,9 @@ NAN_METHOD(New) {
         return;
     }
 
+    // SignalBase::init();
+    // Job::init();
+
     auto job = new NanJob(std::shared_ptr<Job>(new Job));
 
     auto thiz = info.This();
@@ -154,9 +157,6 @@ NAN_METHOD(New) {
 }
 
 NAN_METHOD(Start) {
-    SignalBase::init();
-    Job::init();
-
     auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
     Job::Mode m = Job::Foreground;
     if (info.Length() > 0) {

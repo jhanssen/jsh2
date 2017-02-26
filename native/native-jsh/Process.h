@@ -19,8 +19,8 @@ public:
     {
     }
 
-    void setEnviron(Environ&& environ);
-    void setArgs(Args&& args);
+    void setEnviron(Environ&& environ) { mEnviron = std::forward<Environ>(environ); }
+    void setArgs(Args&& args) { mArgs = std::forward<Args>(args); }
 
     const std::string& path() const { return mPath; }
     const Environ& environ() const { return mEnviron; }

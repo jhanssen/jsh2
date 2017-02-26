@@ -346,8 +346,9 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
         return cmd;
     };
 
-    const char** argv = reinterpret_cast<const char**>(malloc((args.size() + 1) * sizeof(char*)));
-    argv[args.size()] = 0;
+    const char** argv = reinterpret_cast<const char**>(malloc((args.size() + 2) * sizeof(char*)));
+    argv[0] = proc->path().c_str();
+    argv[args.size() + 1] = 0;
     int idx = 0;
     for (const std::string& arg : args) {
         argv[idx++] = arg.c_str();
@@ -398,7 +399,7 @@ void Job::start(Mode m)
         pid = fork();
         if (pid == 0) {
             // child
-            launch(proc, in, err, out, m, is_interactive);
+            launch(proc, in, out, err, m, is_interactive);
         } else if (pid > 0) {
             // parent
             proc->mPid = pid;
