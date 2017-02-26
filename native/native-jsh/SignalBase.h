@@ -8,8 +8,8 @@
 class SignalBase
 {
 public:
-    SignalBase() { sBases.insert(this); }
-    ~SignalBase() { sBases.erase(this); cleanup(); }
+    SignalBase() { }
+    ~SignalBase() { removeBase(this); }
 
     static void init();
     static void deinit();
@@ -65,12 +65,7 @@ protected:
     void call(CallBase* base) const;
 
 private:
-    void cleanup();
-
-private:
-    uv_async_t mAsync;
-
-    static std::unordered_set<SignalBase*> sBases;
+    static void removeBase(SignalBase* base);
 };
 
 #endif

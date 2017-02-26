@@ -2,40 +2,45 @@
 #include "utils.h"
 #include <unordered_map>
 
-std::unordered_set<SignalBase*> SignalBase::sBases;
-
 struct {
     Mutex mutex;
-    std::unordered_map<const uv_async_t*, std::vector<SignalBase::CallBase*> > calls;
+    std::unordered_map<const SignalBase*, std::vector<SignalBase::CallBase*> > calls;
 
+    uv_async_t async;
     uv_thread_t mainThread;
 } static state;
 
 void SignalBase::init()
 {
+    MutexLocker locker(&state.mutex);
     state.mainThread = uv_thread_self();
+    uv_async_init(uv_default_loop(), &state.async, [](uv_async_t*) {
+            std::unordered_map<const SignalBase*, std::vector<SignalBase::CallBase*> > calls;
+            {
+                MutexLocker locker(&state.mutex);
+                std::swap(state.calls, calls);
+            }
 
-    auto func = [](uv_async_t* async) {
-        std::vector<SignalBase::CallBase*> calls;
-        {
-            MutexLocker locker(&state.mutex);
-            auto it = state.calls.find(async);
-            if (it != state.calls.end())
-                std::swap(it->second, calls);
-        }
-        for (auto c : calls) {
-            c->call();
-            delete c;
-        }
-    };
-
-    for (SignalBase* base : sBases) {
-        uv_async_init(uv_default_loop(), &base->mAsync, func);
-    }
+            auto base = calls.begin();
+            const auto end = calls.cend();
+            while (base != end) {
+                for (const auto& c : base->second) {
+                    c->call();
+                    delete c;
+                }
+                ++base;
+            }
+        });
 }
 
 void SignalBase::deinit()
 {
+}
+
+void SignalBase::removeBase(SignalBase* base)
+{
+    MutexLocker locker(&state.mutex);
+    state.calls.erase(base);
 }
 
 bool SignalBase::isLoopThread()
@@ -44,17 +49,11 @@ bool SignalBase::isLoopThread()
     return uv_thread_equal(&self, &state.mainThread);
 }
 
-void SignalBase::cleanup()
-{
-    MutexLocker locker(&state.mutex);
-    state.calls.erase(&mAsync);
-}
-
 void SignalBase::call(CallBase* base) const
 {
     {
         MutexLocker locker(&state.mutex);
-        state.calls[&mAsync].push_back(base);
+        state.calls[this].push_back(base);
     }
-    uv_async_send(const_cast<uv_async_t*>(&mAsync));
+    uv_async_send(const_cast<uv_async_t*>(&state.async));
 }
