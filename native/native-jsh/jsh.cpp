@@ -110,11 +110,13 @@ public:
         job->stdout().on(bind(onout, _1, _2, &onStdOut));
         job->stderr().on(bind(onout, _1, _2, &onStdErr));
 
-        job->stateChanged().on(bind([](const auto& job, auto state, auto cb) {
+        job->stateChanged().on(bind([this](const auto& job, auto state, auto cb) {
                     Nan::HandleScope scope;
                     auto nodeState = v8::Local<v8::Value>::Cast(Nan::New<v8::Uint32>(state));
                     if (!cb->IsEmpty())
                         cb->Call(1, &nodeState);
+                    if (state == Job::Terminated)
+                        this->job.reset();
                 }, _1, _2, &onStateChanged));
     }
     ~NanJob()

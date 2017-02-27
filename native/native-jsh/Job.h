@@ -8,6 +8,7 @@
 #include <vector>
 #include <unordered_set>
 #include <memory>
+#include <unistd.h>
 
 class JobWaiter;
 
@@ -22,6 +23,8 @@ public:
     ~Job()
     {
         assert(isTerminated());
+        if (mStdin != -1)
+            ::close(mStdin);
     }
 
     void add(Process&& proc) { mProcs.push_back(std::forward<Process>(proc)); }
@@ -36,14 +39,17 @@ public:
 
     bool isStopped() const;
     bool isTerminated() const;
+    bool isIoClosed() const { return mStdout == -1 && mStderr == -1; }
 
     static void init();
     static void deinit();
 
     enum State { Stopped, Terminated };
+    enum Io { Stdout, Stderr };
     Signal<std::function<void(const std::shared_ptr<Job>&, State)> >& stateChanged() { return mStateChanged; }
     Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> >& stdout() { return mStdoutSignal; }
     Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> >& stderr() { return mStderrSignal; }
+    Signal<std::function<void(const std::shared_ptr<Job>&, Io io)> >& ioClosed() { return mIoClosed; }
 
 private:
     bool checkState(pid_t pid, int status);
@@ -60,6 +66,7 @@ private:
     Mode mMode;
     Signal<std::function<void(const std::shared_ptr<Job>&, State)> > mStateChanged;
     Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> > mStdoutSignal, mStderrSignal;
+    Signal<std::function<void(const std::shared_ptr<Job>&, Io io)> > mIoClosed;
 
     static std::unordered_set<std::shared_ptr<Job> > sJobs;
 

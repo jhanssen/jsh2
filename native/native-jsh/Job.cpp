@@ -109,24 +109,25 @@ void JobReader::wakeup()
 
 void JobReader::run()
 {
-    auto handleRead = [](const std::shared_ptr<Job>& weak, int fd, Buffer& buffer) -> bool {
+    enum ReadStatus { Ok, Closed, Error };
+    auto handleRead = [](const std::shared_ptr<Job>& weak, int fd, Buffer& buffer) -> ReadStatus {
         int e;
         uint8_t buf[32768];
         for (;;) {
             EINTRWRAP(e, ::read(fd, buf, sizeof(buf)));
             if (e == -1) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
-                    return true;
-                return false;
+                    return Ok;
+                return Error;
             }
             if (e == 0) {
-                // weird
-                return false;
+                // file descriptor closed
+                return Closed;
             }
 
             buffer.add(buf, e);
         }
-        return false;
+        return Error;
     };
 
     fd_set rdset, actualwrset;
@@ -146,12 +147,17 @@ void JobReader::run()
             std::vector<std::weak_ptr<Job> > bad;
             for (auto& r : mReads) {
                 auto& jobdata = r.second;
-                FD_SET(jobdata.stdin, &rdset);
-                if (jobdata.stdin > max)
-                    max = jobdata.stdin;
-                FD_SET(jobdata.stdout, &rdset);
-                if (jobdata.stdout > max)
-                    max = jobdata.stdout;
+                if (jobdata.stderr != -1) {
+                    FD_SET(jobdata.stderr, &rdset);
+                    if (jobdata.stderr > max)
+                        max = jobdata.stderr;
+                }
+                if (jobdata.stdout != -1) {
+                    // printf("adding out %d\n", jobdata.stdout);
+                    FD_SET(jobdata.stdout, &rdset);
+                    if (jobdata.stdout > max)
+                        max = jobdata.stdout;
+                }
                 if (jobdata.needsWrite) {
                     jobdata.needsWrite = false;
                     if (std::shared_ptr<Job> job = r.first.lock()) {
@@ -210,7 +216,9 @@ void JobReader::run()
                 mReads.erase(j);
             }
         }
+        // printf("selecting %d\n", max);
         int r = ::select(max + 1, &rdset, wrset, 0, 0);
+        // printf("selected %d\n", r);
         if (r > 0) {
             if (FD_ISSET(mPipe[0], &rdset)) {
                 // drain pipe
@@ -231,32 +239,60 @@ void JobReader::run()
                 for (auto& r : mReads) {
                     auto& jobdata = r.second;
                     bool handled = true;
-                    if (FD_ISSET(jobdata.stdout, &rdset)) {
+                    bool outclosed = false;
+                    if (jobdata.stdout != -1 && FD_ISSET(jobdata.stdout, &rdset)) {
+                        // printf("handling out\n");
                         handled = false;
                         if (std::shared_ptr<Job> job = r.first.lock()) {
-                            if (handleRead(job, jobdata.stdout, buffer)) {
+                            auto state = handleRead(job, jobdata.stdout, buffer);
+                            switch (state) {
+                            case Ok:
                                 handled = true;
                                 job->stdout()(job, std::move(buffer));
                                 buffer.clear();
+                                break;
+                            case Closed:
+                                // printf("out closed\n");
+                                handled = true;
+                                outclosed = true;
+                                jobdata.stdout = -1;
+                                if (!buffer.empty())
+                                    job->stdout()(job, std::move(buffer));
+                                job->ioClosed()(job, Job::Stdout);
+                                break;
+                            case Error:
+                                break;
                             }
                         }
                     }
-                    if (FD_ISSET(jobdata.stderr, &rdset)) {
+                    if (jobdata.stderr != -1 && FD_ISSET(jobdata.stderr, &rdset)) {
                         handled = false;
                         if (std::shared_ptr<Job> job = r.first.lock()) {
-                            if (handleRead(job, jobdata.stderr, buffer)) {
+                            auto state = handleRead(job, jobdata.stderr, buffer);
+                            switch (state) {
+                            case Ok:
                                 handled = true;
                                 job->stderr()(job, std::move(buffer));
                                 buffer.clear();
+                            case Closed:
+                                // printf("err closed\n");
+                                if (!outclosed)
+                                    handled = true;
+                                jobdata.stderr = -1;
+                                if (!buffer.empty())
+                                    job->stderr()(job, std::move(buffer));
+                                job->ioClosed()(job, Job::Stderr);
+                                break;
+                            case Error:
+                                break;
                             }
                         }
-                    }
-                    if (wrset && FD_ISSET(jobdata.stdin, wrset)) {
-                        jobdata.needsWrite = true;
                     }
                     if (!handled) {
                         // bad job, take it out
                         bad.push_back(r.first);
+                    } else if (wrset && FD_ISSET(jobdata.stdin, wrset)) {
+                        jobdata.needsWrite = true;
                     }
                 }
                 for (const auto j : bad) {
@@ -289,6 +325,7 @@ uv_async_t JobWaiter::sAsync;
 void JobWaiter::start()
 {
     uv_async_init(uv_default_loop(), &sAsync, [](uv_async_t*) {
+            // printf("SIGCHLD\n");
             int status;
             std::vector<std::shared_ptr<Job> > dead;
             for (;;) {
@@ -298,9 +335,11 @@ void JobWaiter::start()
                         if (job->checkState(w, status)) {
                             if (job->isTerminated()) {
                                 // if our job is completely done we should notify someone(tm)
-                                job->stateChanged()(job, Job::Terminated);
-                                // and die
-                                dead.push_back(job);
+                                if (job->isIoClosed()) {
+                                    job->stateChanged()(job, Job::Terminated);
+                                    // and die
+                                    dead.push_back(job);
+                                }
                             } else if (job->isStopped()) {
                                 job->stateChanged()(job, Job::Stopped);
                             }
@@ -315,6 +354,7 @@ void JobWaiter::start()
                 break;
             }
             for (auto job : dead) {
+                // printf("erasing from jobs(1)\n");
                 Job::sJobs.erase(job);
             }
         });
@@ -419,29 +459,70 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
     };
 
     const char** argv = reinterpret_cast<const char**>(malloc((args.size() + 2) * sizeof(char*)));
-    argv[0] = proc->path().c_str();
+    argv[0] = strdup(proc->path().c_str());
     argv[args.size() + 1] = 0;
     int idx = 0;
     for (const std::string& arg : args) {
-        argv[++idx] = arg.c_str();
+        argv[++idx] = strdup(arg.c_str());
     }
     char** envp = reinterpret_cast<char**>(malloc((environ.size() + 1) * sizeof(char*)));
+    envp[environ.size()] = 0;
     idx = 0;
     for (const auto& env : environ) {
         envp[idx++] = strdup((env.first + "=" + env.second).c_str());
     }
 
     // we need to find proc->path() in $PATH
-    execve(pathify(proc->path()).c_str(), const_cast<char*const*>(argv), envp);
+    const auto resolved = pathify(proc->path());
+
+    // FILE* f = fopen("/tmp/jshproc.txt", "a");
+    // fprintf(f, "going to run '%s'\n", resolved.c_str());
+    // fclose(f);
+
+    execve(resolved.c_str(), const_cast<char*const*>(argv), envp);
+
+    // FILE* f2 = fopen("/tmp/jshproc.txt", "a");
+    // fprintf(f2, "but failed miserably %d\n", errno);
+    // fclose(f2);
 }
 
 void Job::start(Mode m)
 {
+    {
+        mIoClosed.on(std::bind([](const std::shared_ptr<Job>& job, Job::Io io) {
+                    switch (io) {
+                    case Job::Stdout:
+                        if (job->mStdout != -1) {
+                            ::close(job->mStdout);
+                            job->mStdout = -1;
+                        }
+                        break;
+                    case Job::Stderr:
+                        if (job->mStderr != -1) {
+                            ::close(job->mStderr);
+                            job->mStderr = -1;
+                        }
+                        break;
+                    }
+                    if (job->isIoClosed()) {
+                        if (job->mStdin != -1) {
+                            ::close(job->mStdin);
+                            job->mStdin = -1;
+                        }
+                        if (job->isTerminated()) {
+                            job->stateChanged()(job, Job::Terminated);
+                            // printf("erasing from jobs(2)\n");
+                            sJobs.erase(job);
+                        }
+                    }
+                }, std::placeholders::_1, std::placeholders::_2));
+    }
+
     sJobs.insert(shared_from_this());
 
     static bool is_interactive = isatty(STDIN_FILENO) != 0;
 
-    int p[2], in, out, lastout, err;
+    int p[2], in = -1, out, lastout, err = -1;
     ::pipe(p);
     mStdin = p[1];
     in = p[0];
@@ -468,9 +549,13 @@ void Job::start(Mode m)
             out = lastout;
         }
 
+        // printf("forking\n");
         pid = fork();
         if (pid == 0) {
             // child
+            close(mStdin);
+            close(mStdout);
+            close(mStderr);
             launch(proc, in, out, err, m, is_interactive);
         } else if (pid > 0) {
             // parent
@@ -484,13 +569,16 @@ void Job::start(Mode m)
             // sad!
         }
 
-        if (proc != start)
-            close(in);
-        if (out != lastout)
-            close(out);
+        close(in);
+        close(out);
+
         in = p[0];
         ++proc;
     }
+    if (in != mStdout)
+        close(in);
+    if (err != -1)
+        close(err);
 
     if (is_interactive)
         setMode(m, false);
