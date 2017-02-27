@@ -307,6 +307,8 @@ NAN_MODULE_INIT(Initialize) {
         auto ctorFunc = Nan::GetFunction(ctor).ToLocalChecked();
         Nan::Set(ctorFunc, Nan::New("Foreground").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Foreground));
         Nan::Set(ctorFunc, Nan::New("Background").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Background));
+        Nan::Set(ctorFunc, Nan::New("Stopped").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Stopped));
+        Nan::Set(ctorFunc, Nan::New("Terminated").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Terminated));
 
         Nan::Set(target, cname, Nan::GetFunction(ctor).ToLocalChecked());
     }
