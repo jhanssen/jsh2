@@ -32,7 +32,7 @@ public:
     void start(Mode m);
     void terminate();
 
-    void write(const uint8_t* data, size_t len);
+    void write(const uint8_t* data, size_t len) { mStdinBuffer.add(data, len); }
 
     bool isStopped() const;
     bool isTerminated() const;
@@ -52,6 +52,7 @@ private:
 private:
     std::string mCommand;
     std::vector<Process> mProcs;
+    Buffer mStdinBuffer;
     pid_t mPgid;
     struct termios mTmodes;
     int mStdin, mStdout, mStderr;
@@ -63,6 +64,7 @@ private:
     static std::unordered_set<std::shared_ptr<Job> > sJobs;
 
     friend class JobWaiter;
+    friend class JobReader;
 };
 
 inline bool Job::isStopped() const

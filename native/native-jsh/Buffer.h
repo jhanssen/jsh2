@@ -28,6 +28,7 @@ public:
     void add(const uint8_t* data, size_t len);
 
     size_t size() const { return mSize; }
+    bool empty() const { return !mSize; }
 
     size_t read(uint8_t* data, size_t len);
     Data readAll();

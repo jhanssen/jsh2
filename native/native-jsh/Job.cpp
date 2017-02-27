@@ -38,24 +38,23 @@ public:
         ::close(mPipe[1]);
     }
 
-    void add(const std::shared_ptr<Job>& job, int out, int err)
+    void add(const std::shared_ptr<Job>& job)
     {
+        JobData data = { job->mStdin, job->mStdout, job->mStderr, true, 0, 0, Buffer::Data() };
+
         // make read pipes non-blocking
-        int r = fcntl(out, F_GETFL);
-        fcntl(out, F_SETFL, r | O_NONBLOCK);
+        int r = fcntl(data.stdin, F_GETFL);
+        fcntl(data.stdin, F_SETFL, r | O_NONBLOCK);
 
-        r = fcntl(err, F_GETFL);
-        fcntl(err, F_SETFL, r | O_NONBLOCK);
+        r = fcntl(data.stdout, F_GETFL);
+        fcntl(data.stdout, F_SETFL, r | O_NONBLOCK);
+
+        r = fcntl(data.stderr, F_GETFL);
+        fcntl(data.stderr, F_SETFL, r | O_NONBLOCK);
 
         MutexLocker locker(&mMutex);
-        mReads.insert(std::make_pair(job, std::make_pair(out, err)));
+        mReads[job] = std::move(data);
         wakeup();
-    }
-
-    void remove(const std::shared_ptr<Job>& job)
-    {
-        MutexLocker locker(&mMutex);
-        mReads.erase(job);
     }
 
     void start()
@@ -88,7 +87,16 @@ private:
     int mPipe[2];
     bool mStopped;
 
-    std::map<std::weak_ptr<Job>, std::pair<int, int>, std::owner_less<std::weak_ptr<Job> > > mReads;
+    struct JobData
+    {
+        int stdin, stdout, stderr;
+
+        bool needsWrite;
+        size_t pendingOff, pendingRem;
+        Buffer::Data pendingWrite;
+    };
+
+    std::map<std::weak_ptr<Job>, JobData, std::owner_less<std::weak_ptr<Job> > > mReads;
 };
 
 void JobReader::wakeup()
@@ -120,9 +128,11 @@ void JobReader::run()
         return false;
     };
 
-    fd_set rdset;
+    fd_set rdset, actualwrset;
+    fd_set* wrset = 0;
     for (;;) {
         // select on everything
+        wrset = 0;
         FD_ZERO(&rdset);
         FD_SET(mPipe[0], &rdset);
         int max = mPipe[0];
@@ -132,16 +142,72 @@ void JobReader::run()
             if (mStopped)
                 break;
 
-            for (const auto& r : mReads) {
-                FD_SET(r.second.first, &rdset);
-                if (r.second.first > max)
-                    max = r.second.first;
-                FD_SET(r.second.second, &rdset);
-                if (r.second.second > max)
-                    max = r.second.second;
+            std::vector<std::weak_ptr<Job> > bad;
+            for (auto& r : mReads) {
+                auto& jobdata = r.second;
+                FD_SET(jobdata.stdin, &rdset);
+                if (jobdata.stdin > max)
+                    max = jobdata.stdin;
+                FD_SET(jobdata.stdout, &rdset);
+                if (jobdata.stdout > max)
+                    max = jobdata.stdout;
+                if (jobdata.needsWrite) {
+                    jobdata.needsWrite = false;
+                    if (std::shared_ptr<Job> job = r.first.lock()) {
+                        Buffer::Data data;
+                        size_t dataOff = 0, dataRem = 0;
+                        if (!jobdata.pendingWrite.empty()) {
+                            data = std::move(jobdata.pendingWrite);
+                            dataOff = jobdata.pendingOff;
+                            dataRem = jobdata.pendingRem;
+                            jobdata.pendingOff = 0;
+                            jobdata.pendingRem = 0;
+                        } else {
+                            data.resize(32768);
+                        }
+                        int e;
+                        for (;;) {
+                            if (!dataRem) {
+                                dataOff = 0;
+                                dataRem = job->mStdinBuffer.read(&data[0], data.size());
+                                if (!dataRem) {
+                                    // nothing more to do
+                                    break;
+                                }
+                            }
+                            EINTRWRAP(e, ::write(jobdata.stdin, &data[0] + dataOff, dataRem));
+                            if (e == -1) {
+                                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                                    jobdata.pendingWrite = std::move(data);
+                                    jobdata.pendingRem = dataRem;
+                                    jobdata.pendingOff = dataOff;
+                                } else {
+                                    // bad job
+                                    bad.push_back(r.first);
+                                }
+                                break;
+                            }
+                            dataRem -= e;
+                            dataOff += e;
+                        }
+                    } else {
+                        // bad job
+                        bad.push_back(r.first);
+                    }
+                }
+                if (!jobdata.pendingWrite.empty()) {
+                    wrset = &actualwrset;
+                    FD_ZERO(&actualwrset);
+                    FD_SET(jobdata.stdin, &actualwrset);
+                    if (jobdata.stdin > max)
+                        max = jobdata.stdin;
+                }
+            }
+            for (const auto j : bad) {
+                mReads.erase(j);
             }
         }
-        int r = ::select(max + 1, &rdset, 0, 0, 0);
+        int r = ::select(max + 1, &rdset, wrset, 0, 0);
         if (r > 0) {
             if (FD_ISSET(mPipe[0], &rdset)) {
                 // drain pipe
@@ -159,27 +225,31 @@ void JobReader::run()
 
                 MutexLocker locker(&mMutex);
                 std::vector<std::weak_ptr<Job> > bad;
-                for (const auto& r : mReads) {
+                for (auto& r : mReads) {
+                    auto& jobdata = r.second;
                     bool handled = true;
-                    if (FD_ISSET(r.second.first, &rdset)) {
+                    if (FD_ISSET(jobdata.stdout, &rdset)) {
                         handled = false;
                         if (std::shared_ptr<Job> job = r.first.lock()) {
-                            if (handleRead(job, r.second.first, buffer)) {
+                            if (handleRead(job, jobdata.stdout, buffer)) {
                                 handled = true;
                                 job->stdout()(job, std::move(buffer));
                                 buffer.clear();
                             }
                         }
                     }
-                    if (FD_ISSET(r.second.second, &rdset)) {
+                    if (FD_ISSET(jobdata.stderr, &rdset)) {
                         handled = false;
                         if (std::shared_ptr<Job> job = r.first.lock()) {
-                            if (handleRead(job, r.second.second, buffer)) {
+                            if (handleRead(job, jobdata.stderr, buffer)) {
                                 handled = true;
                                 job->stderr()(job, std::move(buffer));
                                 buffer.clear();
                             }
                         }
+                    }
+                    if (wrset && FD_ISSET(jobdata.stdin, wrset)) {
+                        jobdata.needsWrite = true;
                     }
                     if (!handled) {
                         // bad job, take it out
@@ -243,7 +313,6 @@ void JobWaiter::start()
             }
             for (auto job : dead) {
                 Job::sJobs.erase(job);
-                state.reader->remove(job);
             }
         });
 
@@ -382,7 +451,7 @@ void Job::start(Mode m)
     mStdout = p[0];
     lastout = p[1];
 
-    state.reader->add(shared_from_this(), mStdout, mStderr);
+    state.reader->add(shared_from_this());
 
     pid_t pid;
     Process* start = &mProcs[0];
