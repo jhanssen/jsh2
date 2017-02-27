@@ -195,6 +195,7 @@ void JobReader::run()
                     } else {
                         // bad job
                         bad.push_back(r.first);
+                        continue;
                     }
                 }
                 if (!jobdata.pendingWrite.empty()) {

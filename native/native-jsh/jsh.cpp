@@ -101,7 +101,7 @@ public:
         auto onout = [](const auto& /*job*/, auto& buffer, auto cb) {
             Nan::HandleScope scope;
             auto data = buffer.readAll();
-            auto nodeBuffer = v8::Local<v8::Value>::Cast(Nan::NewBuffer(reinterpret_cast<char*>(&data[0]), data.size()).ToLocalChecked());
+            auto nodeBuffer = v8::Local<v8::Value>::Cast(Nan::CopyBuffer(reinterpret_cast<char*>(&data[0]), data.size()).ToLocalChecked());
             if (!cb->IsEmpty())
                 cb->Call(1, &nodeBuffer);
         };
@@ -249,6 +249,24 @@ NAN_METHOD(Add) {
     job->add(std::move(proc));
 }
 
+NAN_METHOD(Write) {
+    auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
+    if (info.Length() >= 1) {
+        if (info[0]->IsString()) {
+            Nan::Utf8String str(info[0]);
+            job->write(reinterpret_cast<uint8_t*>(*str), str.length());
+        } else if (info[0]->IsObject() && node::Buffer::HasInstance(info[0])) {
+            auto data = node::Buffer::Data(info[0]);
+            auto len = node::Buffer::Length(info[0]);
+            job->write(reinterpret_cast<uint8_t*>(data), len);
+        } else {
+            Nan::ThrowError("Job.write invalid argument");
+        }
+    } else {
+        Nan::ThrowError("Job.write takes a string or buffer argument");
+    }
+}
+
 NAN_METHOD(On) {
     auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder());
     if (info.Length() >= 2 && info[0]->IsString() && info[1]->IsFunction()) {
@@ -284,6 +302,7 @@ NAN_MODULE_INIT(Initialize) {
         Nan::SetPrototypeMethod(ctor, "add", job::Add);
         Nan::SetPrototypeMethod(ctor, "on", job::On);
         Nan::SetPrototypeMethod(ctor, "start", job::Start);
+        Nan::SetPrototypeMethod(ctor, "write", job::Write);
 
         auto ctorFunc = Nan::GetFunction(ctor).ToLocalChecked();
         Nan::Set(ctorFunc, Nan::New("Foreground").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Foreground));
