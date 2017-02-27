@@ -33,7 +33,7 @@ public:
     size_t read(uint8_t* data, size_t len);
     Data readAll();
 
-    void clear() { mSize = mOffset = 0; mDatas = {}; }
+    void clear() { mSize = mOffset = 0; while (!mDatas.empty()) mDatas.pop(); }
 
 private:
     Buffer(const Buffer&) = delete;
