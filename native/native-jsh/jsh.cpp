@@ -158,7 +158,7 @@ NAN_METHOD(New) {
 
 NAN_METHOD(Start) {
     auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
-    Job::Mode m = Job::Foreground;
+    Job::Mode m = Job::Background;
     if (info.Length() > 0) {
         if (!info[0]->IsUint32()) {
             Nan::ThrowError("Job.start takes a mode (number) argument");
