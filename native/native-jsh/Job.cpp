@@ -19,6 +19,7 @@ class JobWaiter;
 struct {
     std::shared_ptr<JobReader> reader;
     std::shared_ptr<JobWaiter> waiter;
+    Mutex stdinMutex;
 } static state;
 
 class JobReader
@@ -169,6 +170,7 @@ void JobReader::run()
                         for (;;) {
                             if (!dataRem) {
                                 dataOff = 0;
+                                MutexLocker locker(&state.stdinMutex);
                                 dataRem = job->mStdinBuffer.read(&data[0], data.size());
                                 if (!dataRem) {
                                     // nothing more to do
@@ -516,4 +518,10 @@ void Job::deinit()
     if (state.waiter)
         state.waiter->stop();
     state.waiter.reset();
+}
+
+void Job::write(const uint8_t* data, size_t len)
+{
+    MutexLocker locker(&state.stdinMutex);
+    mStdinBuffer.add(data, len);
 }

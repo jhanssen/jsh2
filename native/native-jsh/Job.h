@@ -32,7 +32,7 @@ public:
     void start(Mode m);
     void terminate();
 
-    void write(const uint8_t* data, size_t len) { mStdinBuffer.add(data, len); }
+    void write(const uint8_t* data, size_t len);
 
     bool isStopped() const;
     bool isTerminated() const;
