@@ -10,8 +10,8 @@ nodeCleanup(() => {
     nativeJsh.deinit();
 });
 
-const JSH = require("./lib/jsh/index");
-const jsh = new JSH();
+const CodeRunner = require("./lib/coderunner/index");
+const runner = new CodeRunner();
 //console.log(jsh.commands);
 
 {
@@ -22,7 +22,7 @@ const jsh = new JSH();
     commands.init();
     builtins.init();
     if (native.interactive) {
-        console.run(jsh);
+        console.run(runner);
     } else {
         // we'll want to read arguments at this point and execute commands
     }
