@@ -159,8 +159,9 @@ NAN_METHOD(New) {
 }
 
 NAN_METHOD(Start) {
-    auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
-    Job::Mode m = Job::Background;
+    auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder());
+    Job::Mode m = Job::Foreground;
+    uint8_t dupmode = 0;
     if (info.Length() > 0) {
         if (!info[0]->IsUint32()) {
             Nan::ThrowError("Job.start takes a mode (number) argument");
@@ -179,7 +180,25 @@ NAN_METHOD(Start) {
             return;
         }
     }
-    job->start(m);
+    if (info.Length() > 1) {
+        if (!info[0]->IsUint32()) {
+            Nan::ThrowError("Job.start takes a dupmode (number) argument");
+            return;
+        }
+        const uint32_t dm = v8::Local<v8::Uint32>::Cast(info[1])->Value();
+        if (dm > std::numeric_limits<uint8_t>::max()) {
+            Nan::ThrowError("Job.start dupmode out of range");
+            return;
+        }
+        dupmode = static_cast<uint8_t>(dm);
+    }
+    if (m == Job::Background) {
+        if (!(dupmode & Job::DupStdout) && !job->onStdOut.IsEmpty())
+            dupmode |= Job::DupStdout;
+        if (!(dupmode & Job::DupStderr) && !job->onStdErr.IsEmpty())
+            dupmode |= Job::DupStderr;
+    }
+    job->job->start(m, dupmode);
 }
 
 NAN_METHOD(Add) {
@@ -269,6 +288,32 @@ NAN_METHOD(Write) {
     }
 }
 
+NAN_METHOD(SetMode) {
+    auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
+    if (!info.Length()) {
+        Nan::ThrowError("Job.setMode takes a mode argument");
+        return;
+    }
+    if (!info[0]->IsUint32()) {
+        Nan::ThrowError("Job.start takes a mode (number) argument");
+        return;
+    }
+    Job::Mode m;
+    const uint32_t mm = v8::Local<v8::Uint32>::Cast(info[0])->Value();
+    switch (mm) {
+    case Job::Foreground:
+        m = Job::Foreground;
+        break;
+    case Job::Background:
+        m = Job::Background;
+        break;
+    default:
+        Nan::ThrowError("Job.start takes a mode argument");
+        return;
+    }
+    job->setMode(m, true);
+}
+
 NAN_METHOD(On) {
     auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder());
     if (info.Length() >= 2 && info[0]->IsString() && info[1]->IsFunction()) {
@@ -305,12 +350,16 @@ NAN_MODULE_INIT(Initialize) {
         Nan::SetPrototypeMethod(ctor, "on", job::On);
         Nan::SetPrototypeMethod(ctor, "start", job::Start);
         Nan::SetPrototypeMethod(ctor, "write", job::Write);
+        Nan::SetPrototypeMethod(ctor, "setMode", job::SetMode);
 
         auto ctorFunc = Nan::GetFunction(ctor).ToLocalChecked();
         Nan::Set(ctorFunc, Nan::New("Foreground").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Foreground));
         Nan::Set(ctorFunc, Nan::New("Background").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Background));
         Nan::Set(ctorFunc, Nan::New("Stopped").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Stopped));
         Nan::Set(ctorFunc, Nan::New("Terminated").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Terminated));
+        Nan::Set(ctorFunc, Nan::New("DupStdin").ToLocalChecked(), Nan::New<v8::Uint32>(Job::DupStdin));
+        Nan::Set(ctorFunc, Nan::New("DupStdout").ToLocalChecked(), Nan::New<v8::Uint32>(Job::DupStdout));
+        Nan::Set(ctorFunc, Nan::New("DupStderr").ToLocalChecked(), Nan::New<v8::Uint32>(Job::DupStderr));
 
         Nan::Set(target, cname, Nan::GetFunction(ctor).ToLocalChecked());
     }

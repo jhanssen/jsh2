@@ -43,15 +43,22 @@ public:
     {
         JobData data = { job->mStdin, job->mStdout, job->mStderr, true, 0, 0, Buffer::Data() };
 
+        int r;
         // make read pipes non-blocking
-        int r = fcntl(data.stdin, F_GETFL);
-        fcntl(data.stdin, F_SETFL, r | O_NONBLOCK);
+        if (data.stdin != -1) {
+            r = fcntl(data.stdin, F_GETFL);
+            fcntl(data.stdin, F_SETFL, r | O_NONBLOCK);
+        }
 
-        r = fcntl(data.stdout, F_GETFL);
-        fcntl(data.stdout, F_SETFL, r | O_NONBLOCK);
+        if (data.stdout != -1) {
+            r = fcntl(data.stdout, F_GETFL);
+            fcntl(data.stdout, F_SETFL, r | O_NONBLOCK);
+        }
 
-        r = fcntl(data.stderr, F_GETFL);
-        fcntl(data.stderr, F_SETFL, r | O_NONBLOCK);
+        if (data.stderr != -1) {
+            r = fcntl(data.stderr, F_GETFL);
+            fcntl(data.stderr, F_SETFL, r | O_NONBLOCK);
+        }
 
         MutexLocker locker(&mMutex);
         mReads[job] = std::move(data);
@@ -158,7 +165,7 @@ void JobReader::run()
                     if (jobdata.stdout > max)
                         max = jobdata.stdout;
                 }
-                if (jobdata.needsWrite) {
+                if (jobdata.stdin != -1 && jobdata.needsWrite) {
                     jobdata.needsWrite = false;
                     if (std::shared_ptr<Job> job = r.first.lock()) {
                         Buffer::Data data;
@@ -205,6 +212,7 @@ void JobReader::run()
                     }
                 }
                 if (!jobdata.pendingWrite.empty()) {
+                    assert(jobdata.stdin != -1);
                     wrset = &actualwrset;
                     FD_ZERO(&actualwrset);
                     FD_SET(jobdata.stdin, &actualwrset);
@@ -341,6 +349,10 @@ void JobWaiter::start()
                                     dead.push_back(job);
                                 }
                             } else if (job->isStopped()) {
+                                // save terminal modes in job if it's in the foreground
+                                if (job->mMode == Job::Foreground) {
+                                    tcgetattr(STDIN_FILENO, &job->mTmodes);
+                                }
                                 job->stateChanged()(job, Job::Stopped);
                             }
                             break;
@@ -400,7 +412,6 @@ void Job::setMode(Mode m, bool resume)
         break; }
     case Background: {
         if (resume) {
-            tcsetattr(STDIN_FILENO, TCSADRAIN, &mTmodes);
             kill(-mPgid, SIGCONT);
         }
         break; }
@@ -486,10 +497,10 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
     // fclose(f2);
 }
 
-void Job::start(Mode m)
+void Job::start(Mode m, uint8_t fdmode)
 {
     {
-        mIoClosed.on(std::bind([](const std::shared_ptr<Job>& job, Job::Io io) {
+        mIoClosed.on([](const std::shared_ptr<Job>& job, Job::Io io) {
                     switch (io) {
                     case Job::Stdout:
                         if (job->mStdout != -1) {
@@ -515,7 +526,7 @@ void Job::start(Mode m)
                             sJobs.erase(job);
                         }
                     }
-                }, std::placeholders::_1, std::placeholders::_2));
+            });
     }
 
     sJobs.insert(shared_from_this());
@@ -523,19 +534,35 @@ void Job::start(Mode m)
     static bool is_interactive = isatty(STDIN_FILENO) != 0;
 
     int p[2], in = -1, out, lastout, err = -1;
-    ::pipe(p);
-    mStdin = p[1];
-    in = p[0];
+    if (fdmode & DupStdin) {
+        ::pipe(p);
+        mStdin = p[1];
+        in = p[0];
+    } else {
+        mStdin = -1;
+        in = STDIN_FILENO;
+    }
 
-    ::pipe(p);
-    mStderr = p[0];
-    err = p[1];
+    if (fdmode & DupStderr) {
+        ::pipe(p);
+        mStderr = p[0];
+        err = p[1];
+    } else {
+        mStderr = -1;
+        err = STDERR_FILENO;
+    }
 
-    ::pipe(p);
-    mStdout = p[0];
-    lastout = p[1];
+    if (fdmode & DupStdout) {
+        ::pipe(p);
+        mStdout = p[0];
+        lastout = p[1];
+    } else {
+        mStdout = -1;
+        lastout = STDOUT_FILENO;
+    }
 
-    state.reader->add(shared_from_this());
+    if (fdmode & (DupStdin|DupStdout|DupStderr))
+        state.reader->add(shared_from_this());
 
     pid_t pid;
     Process* start = &mProcs[0];

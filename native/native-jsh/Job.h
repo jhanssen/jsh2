@@ -32,7 +32,8 @@ public:
     enum Mode { Foreground, Background };
     void setMode(Mode m, bool resume);
 
-    void start(Mode m);
+    enum FdMode { DupStdin = 0x1, DupStdout = 0x2, DupStderr = 0x4 };
+    void start(Mode m, uint8_t fdmode = 0);
     void terminate();
 
     void write(const uint8_t* data, size_t len);
