@@ -33,6 +33,10 @@ NAN_METHOD(init) {
             return;
         }
 
+        signal(SIGTSTP, SIG_IGN);
+        signal(SIGTTIN, SIG_IGN);
+        signal(SIGTTOU, SIG_IGN);
+
         if (tcsetpgrp(STDIN_FILENO, state.pgid) == -1) {
             Nan::ThrowError("Unable to set process group for terminal");
             return;
