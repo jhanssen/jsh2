@@ -53,7 +53,7 @@ public:
     Signal<std::function<void(const std::shared_ptr<Job>&, Io io)> >& ioClosed() { return mIoClosed; }
 
 private:
-    bool checkState(pid_t pid, int status);
+    void updateState(Process& pid, int status);
     void launch(Process* proc, int in, int out, int err, Mode m, bool is_interactive);
 
 private:

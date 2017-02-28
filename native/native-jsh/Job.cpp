@@ -335,35 +335,29 @@ void JobWaiter::start()
     uv_async_init(uv_default_loop(), &sAsync, [](uv_async_t*) {
             // printf("SIGCHLD\n");
             int status;
+            pid_t w;
             std::vector<std::shared_ptr<Job> > dead;
-            for (;;) {
-                const pid_t w = waitpid(-1, &status, WNOHANG | WUNTRACED);
-                if (w > 0) {
-                    for (auto job : Job::sJobs) {
-                        if (job->checkState(w, status)) {
-                            if (job->isTerminated()) {
-                                // if our job is completely done we should notify someone(tm)
-                                if (job->isIoClosed()) {
-                                    job->stateChanged()(job, Job::Terminated);
-                                    // and die
-                                    dead.push_back(job);
-                                }
-                            } else if (job->isStopped()) {
-                                // save terminal modes in job if it's in the foreground
-                                if (job->mMode == Job::Foreground) {
-                                    tcgetattr(STDIN_FILENO, &job->mTmodes);
-                                }
-                                job->stateChanged()(job, Job::Stopped);
+            for (auto job : Job::sJobs) {
+                for (auto& proc : job->mProcs) {
+                    EINTRWRAP(w, waitpid(proc.pid(), &status, WNOHANG | WUNTRACED));
+                    if (w > 0) {
+                        job->updateState(proc, status);
+                        if (job->isTerminated()) {
+                            // if our job is completely done we should notify someone(tm)
+                            if (job->isIoClosed()) {
+                                job->stateChanged()(job, Job::Terminated);
+                                // and die
+                                dead.push_back(job);
                             }
-                            break;
-                        } else {
-                            // bad
-                            break;
+                        } else if (job->isStopped()) {
+                            // save terminal modes in job if it's in the foreground
+                            if (job->mMode == Job::Foreground) {
+                                tcgetattr(STDIN_FILENO, &job->mTmodes);
+                            }
+                            job->stateChanged()(job, Job::Stopped);
                         }
                     }
-                    continue;
                 }
-                break;
             }
             for (auto job : dead) {
                 // printf("erasing from jobs(1)\n");
@@ -382,22 +376,15 @@ void JobWaiter::stop()
     uv_signal_stop(&mHandler);
 }
 
-bool Job::checkState(pid_t pid, int status)
+void Job::updateState(Process& proc, int status)
 {
-    for (auto& proc : mProcs) {
-        if (proc.pid() == pid) {
-            // stuff
-            proc.mStatus = status;
-            if (WIFSTOPPED(status)) {
-                proc.mState = Process::Stopped;
-            } else {
-                proc.mState = Process::Terminated;
-            }
-            proc.stateChanged()(&proc, proc.mState);
-            return true;
-        }
+    proc.mStatus = status;
+    if (WIFSTOPPED(status)) {
+        proc.mState = Process::Stopped;
+    } else {
+        proc.mState = Process::Terminated;
     }
-    return false;
+    proc.stateChanged()(&proc, proc.mState);
 }
 
 void Job::setMode(Mode m, bool resume)
