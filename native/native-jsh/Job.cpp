@@ -343,9 +343,10 @@ void JobWaiter::start()
                     if (w > 0) {
                         job->updateState(proc, status);
                         if (job->isTerminated()) {
+                            job->setStatus(status);
                             // if our job is completely done we should notify someone(tm)
                             if (job->isIoClosed()) {
-                                job->stateChanged()(job, Job::Terminated);
+                                job->stateChanged()(job, Job::Terminated, status);
                                 // and die
                                 dead.push_back(job);
                             }
@@ -354,7 +355,7 @@ void JobWaiter::start()
                             if (job->mMode == Job::Foreground) {
                                 tcgetattr(STDIN_FILENO, &job->mTmodes);
                             }
-                            job->stateChanged()(job, Job::Stopped);
+                            job->stateChanged()(job, Job::Stopped, 0);
                         }
                     }
                 }
@@ -514,7 +515,7 @@ void Job::start(Mode m, uint8_t fdmode)
                             job->mStdin = -1;
                         }
                         if (job->isTerminated()) {
-                            job->stateChanged()(job, Job::Terminated);
+                            job->stateChanged()(job, Job::Terminated, job->status());
                             // printf("erasing from jobs(2)\n");
                             sJobs.erase(job);
                         }

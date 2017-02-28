@@ -16,7 +16,8 @@ class Job : public std::enable_shared_from_this<Job>
 {
 public:
     Job()
-        : mPgid(0), mStdin(0), mStdout(0), mStderr(0), mNotified(false), mMode(Foreground)
+        : mPgid(0), mStdin(0), mStdout(0), mStderr(0),
+          mStatus(0), mNotified(false), mMode(Foreground)
     {
     }
 
@@ -42,12 +43,15 @@ public:
     bool isTerminated() const;
     bool isIoClosed() const { return mStdout == -1 && mStderr == -1; }
 
+    void setStatus(int status) { mStatus = status; }
+    int status() const { return mStatus; }
+
     static void init();
     static void deinit();
 
     enum State { Stopped, Terminated };
     enum Io { Stdout, Stderr };
-    Signal<std::function<void(const std::shared_ptr<Job>&, State)> >& stateChanged() { return mStateChanged; }
+    Signal<std::function<void(const std::shared_ptr<Job>&, State, int)> >& stateChanged() { return mStateChanged; }
     Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> >& stdout() { return mStdoutSignal; }
     Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> >& stderr() { return mStderrSignal; }
     Signal<std::function<void(const std::shared_ptr<Job>&, Io io)> >& ioClosed() { return mIoClosed; }
@@ -63,9 +67,10 @@ private:
     pid_t mPgid;
     struct termios mTmodes;
     int mStdin, mStdout, mStderr;
+    int mStatus;
     bool mNotified;
     Mode mMode;
-    Signal<std::function<void(const std::shared_ptr<Job>&, State)> > mStateChanged;
+    Signal<std::function<void(const std::shared_ptr<Job>&, State, int)> > mStateChanged;
     Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> > mStdoutSignal, mStderrSignal;
     Signal<std::function<void(const std::shared_ptr<Job>&, Io io)> > mIoClosed;
 
