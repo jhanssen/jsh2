@@ -423,12 +423,18 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
     signal(SIGTTOU, SIG_DFL);
     signal(SIGCHLD, SIG_DFL);
 
-    dup2(in, STDIN_FILENO);
-    dup2(out, STDOUT_FILENO);
-    dup2(err, STDERR_FILENO);
-    close(in);
-    close(out);
-    close(err);
+    if (in != STDIN_FILENO) {
+        dup2(in, STDIN_FILENO);
+        close(in);
+    }
+    if (out != STDOUT_FILENO) {
+        dup2(out, STDOUT_FILENO);
+        close(out);
+    }
+    if (err != STDERR_FILENO) {
+        dup2(err, STDERR_FILENO);
+        close(err);
+    }
 
     // build argv and envp
     const auto& args = proc->args();
