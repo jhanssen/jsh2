@@ -188,7 +188,7 @@ NAN_METHOD(Start) {
         }
     }
     if (info.Length() > 1) {
-        if (!info[0]->IsUint32()) {
+        if (!info[1]->IsUint32()) {
             Nan::ThrowError("Job.start takes a dupmode (number) argument");
             return;
         }
@@ -362,7 +362,7 @@ NAN_MODULE_INIT(Initialize) {
         Nan::SetPrototypeMethod(ctor, "on", job::On);
         Nan::SetPrototypeMethod(ctor, "start", job::Start);
         Nan::SetPrototypeMethod(ctor, "write", job::Write);
-        Nan::SetPrototypeMethod(ctor, "write", job::Close);
+        Nan::SetPrototypeMethod(ctor, "close", job::Close);
         Nan::SetPrototypeMethod(ctor, "setMode", job::SetMode);
 
         auto ctorFunc = Nan::GetFunction(ctor).ToLocalChecked();

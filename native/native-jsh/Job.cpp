@@ -167,18 +167,8 @@ void JobReader::run()
                         max = jobdata.stdout;
                 }
                 if (jobdata.stdin != -1) {
-                    if (std::shared_ptr<Job> job = r.first.lock()) {
-                        {
-                            MutexLocker locker(&state.stdinMutex);
-                            if (job->mStdinClosed) {
-                                if (jobdata.stdin != STDIN_FILENO)
-                                    ::close(jobdata.stdin);
-                                jobdata.stdin = -1;
-                                jobdata.needsWrite = false;
-                            }
-                        }
-
-                        if (jobdata.needsWrite) {
+                    if (jobdata.needsWrite) {
+                        if (std::shared_ptr<Job> job = r.first.lock()) {
                             jobdata.needsWrite = false;
                             Buffer::Data data;
                             size_t dataOff = 0, dataRem = 0;
@@ -199,10 +189,21 @@ void JobReader::run()
                                     dataRem = job->mStdinBuffer.read(&data[0], data.size());
                                     if (!dataRem) {
                                         // nothing more to do
+                                        if (job->mStdinClosed) {
+                                            if (jobdata.stdin != STDIN_FILENO) {
+                                                // printf("closed stdin %d\n", jobdata.stdin);
+                                                ::close(jobdata.stdin);
+                                            }
+                                            jobdata.stdin = -1;
+                                            jobdata.needsWrite = false;
+                                        }
                                         break;
                                     }
                                 }
+                                // printf("writing %zu bytes to stdin %d\n", dataRem, jobdata.stdin);
+                                // printf("native writing %s\n", std::string(reinterpret_cast<char*>(&data[0]) + dataOff, dataRem).c_str());
                                 EINTRWRAP(e, ::write(jobdata.stdin, &data[0] + dataOff, dataRem));
+                                // printf("wrote %d bytes to stdin %d\n", e, jobdata.stdin);
                                 if (e == -1) {
                                     if (errno == EAGAIN || errno == EWOULDBLOCK) {
                                         jobdata.pendingWrite = std::move(data);
@@ -217,20 +218,40 @@ void JobReader::run()
                                 dataRem -= e;
                                 dataOff += e;
                             }
+                        } else {
+                            // bad job
+                            bad.push_back(r.first);
+                            continue;
                         }
-                    } else {
-                        // bad job
-                        bad.push_back(r.first);
-                        continue;
                     }
                 }
                 if (!jobdata.pendingWrite.empty()) {
+                    // printf("still have pendingwrite\n");
                     assert(jobdata.stdin != -1);
                     wrset = &actualwrset;
                     FD_ZERO(&actualwrset);
                     FD_SET(jobdata.stdin, &actualwrset);
                     if (jobdata.stdin > max)
                         max = jobdata.stdin;
+                } else {
+                    // printf("no pendingwrite\n");
+                    // we might have more data on stdin
+                    if (std::shared_ptr<Job> job = r.first.lock()) {
+                        MutexLocker locker(&state.stdinMutex);
+                        if (!job->mStdinBuffer.empty()) {
+                            // printf("but buffer is not empty\n");
+                            jobdata.needsWrite = true;
+                        } else if (job->mStdinClosed) {
+                            // printf("wanting to close\n");
+                            if (jobdata.stdin != STDIN_FILENO) {
+                                // printf("closed stdin %d\n", jobdata.stdin);
+                                ::close(jobdata.stdin);
+                            }
+                            jobdata.stdin = -1;
+                        }
+                    } else {
+                        bad.push_back(r.first);
+                    }
                 }
             }
             for (const auto j : bad) {

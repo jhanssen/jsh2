@@ -71,7 +71,7 @@ inline size_t Buffer::read(uint8_t* data, size_t len)
         if (front.size() - mOffset >= rem) {
             // read rem bytes, increase mOffset so we start
             // at that point the next time read() is called
-            memcpy(&front[0] + mOffset, data + rd, rem);
+            memcpy(data + rd, &front[0] + mOffset, rem);
             mOffset += rem;
             if (mOffset == front.size()) {
                 mDatas.pop();
@@ -82,7 +82,7 @@ inline size_t Buffer::read(uint8_t* data, size_t len)
             return rd + rem;
         } else {
             // read the entire data, decrease rem
-            memcpy(&front[0] + mOffset, data + rd, front.size() - mOffset);
+            memcpy(data + rd, &front[0] + mOffset, front.size() - mOffset);
             mOffset = 0;
             rd += front.size() - mOffset;
             rem -= front.size() - mOffset;
