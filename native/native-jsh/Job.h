@@ -17,7 +17,7 @@ class Job : public std::enable_shared_from_this<Job>
 public:
     Job()
         : mPgid(0), mStdin(0), mStdout(0), mStderr(0),
-          mStatus(0), mNotified(false), mMode(Foreground)
+          mStatus(0), mNotified(false), mStdinClosed(false), mMode(Foreground)
     {
     }
 
@@ -38,6 +38,7 @@ public:
     void terminate();
 
     void write(const uint8_t* data, size_t len);
+    void close();
 
     bool isStopped() const;
     bool isTerminated() const;
@@ -69,6 +70,7 @@ private:
     int mStdin, mStdout, mStderr;
     int mStatus;
     bool mNotified;
+    bool mStdinClosed;
     Mode mMode;
     Signal<std::function<void(const std::shared_ptr<Job>&, State, int)> > mStateChanged;
     Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> > mStdoutSignal, mStderrSignal;

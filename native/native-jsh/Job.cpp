@@ -80,9 +80,10 @@ public:
         uv_thread_join(&mThread);
     }
 
+    void wakeup();
+
 private:
     void run();
-    void wakeup();
 
     static void run(void* arg)
     {
@@ -165,45 +166,57 @@ void JobReader::run()
                     if (jobdata.stdout > max)
                         max = jobdata.stdout;
                 }
-                if (jobdata.stdin != -1 && jobdata.needsWrite) {
-                    jobdata.needsWrite = false;
+                if (jobdata.stdin != -1) {
                     if (std::shared_ptr<Job> job = r.first.lock()) {
-                        Buffer::Data data;
-                        size_t dataOff = 0, dataRem = 0;
-                        if (!jobdata.pendingWrite.empty()) {
-                            data = std::move(jobdata.pendingWrite);
-                            dataOff = jobdata.pendingOff;
-                            dataRem = jobdata.pendingRem;
-                            jobdata.pendingOff = 0;
-                            jobdata.pendingRem = 0;
-                        } else {
-                            data.resize(32768);
+                        {
+                            MutexLocker locker(&state.stdinMutex);
+                            if (job->mStdinClosed) {
+                                if (jobdata.stdin != STDIN_FILENO)
+                                    ::close(jobdata.stdin);
+                                jobdata.stdin = -1;
+                                jobdata.needsWrite = false;
+                            }
                         }
-                        int e;
-                        for (;;) {
-                            if (!dataRem) {
-                                dataOff = 0;
-                                MutexLocker locker(&state.stdinMutex);
-                                dataRem = job->mStdinBuffer.read(&data[0], data.size());
+
+                        if (jobdata.needsWrite) {
+                            jobdata.needsWrite = false;
+                            Buffer::Data data;
+                            size_t dataOff = 0, dataRem = 0;
+                            if (!jobdata.pendingWrite.empty()) {
+                                data = std::move(jobdata.pendingWrite);
+                                dataOff = jobdata.pendingOff;
+                                dataRem = jobdata.pendingRem;
+                                jobdata.pendingOff = 0;
+                                jobdata.pendingRem = 0;
+                            } else {
+                                data.resize(32768);
+                            }
+                            int e;
+                            for (;;) {
                                 if (!dataRem) {
-                                    // nothing more to do
+                                    dataOff = 0;
+                                    MutexLocker locker(&state.stdinMutex);
+                                    dataRem = job->mStdinBuffer.read(&data[0], data.size());
+                                    if (!dataRem) {
+                                        // nothing more to do
+                                        break;
+                                    }
+                                }
+                                EINTRWRAP(e, ::write(jobdata.stdin, &data[0] + dataOff, dataRem));
+                                if (e == -1) {
+                                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                                        jobdata.pendingWrite = std::move(data);
+                                        jobdata.pendingRem = dataRem;
+                                        jobdata.pendingOff = dataOff;
+                                    } else {
+                                        // bad job
+                                        bad.push_back(r.first);
+                                    }
                                     break;
                                 }
+                                dataRem -= e;
+                                dataOff += e;
                             }
-                            EINTRWRAP(e, ::write(jobdata.stdin, &data[0] + dataOff, dataRem));
-                            if (e == -1) {
-                                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                                    jobdata.pendingWrite = std::move(data);
-                                    jobdata.pendingRem = dataRem;
-                                    jobdata.pendingOff = dataOff;
-                                } else {
-                                    // bad job
-                                    bad.push_back(r.first);
-                                }
-                                break;
-                            }
-                            dataRem -= e;
-                            dataOff += e;
                         }
                     } else {
                         // bad job
@@ -426,15 +439,15 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
 
     if (in != STDIN_FILENO) {
         dup2(in, STDIN_FILENO);
-        close(in);
+        ::close(in);
     }
     if (out != STDOUT_FILENO) {
         dup2(out, STDOUT_FILENO);
-        close(out);
+        ::close(out);
     }
     if (err != STDERR_FILENO) {
         dup2(err, STDERR_FILENO);
-        close(err);
+        ::close(err);
     }
 
     // build argv and envp
@@ -576,11 +589,11 @@ void Job::start(Mode m, uint8_t fdmode)
         if (pid == 0) {
             // child
             if (mStdin != -1)
-                close(mStdin);
+                ::close(mStdin);
             if (mStdout != -1)
-                close(mStdout);
+                ::close(mStdout);
             if (mStderr != -1)
-                close(mStderr);
+                ::close(mStderr);
             launch(proc, in, out, err, m, is_interactive);
         } else if (pid > 0) {
             // parent
@@ -595,17 +608,17 @@ void Job::start(Mode m, uint8_t fdmode)
         }
 
         if (in != STDIN_FILENO)
-            close(in);
+            ::close(in);
         if (out != STDOUT_FILENO)
-            close(out);
+            ::close(out);
 
         in = p[0];
         ++proc;
     }
     if (in != mStdout && in != STDIN_FILENO)
-        close(in);
+        ::close(in);
     if (err != -1 && err != STDERR_FILENO)
-        close(err);
+        ::close(err);
 
     if (is_interactive)
         setMode(m, false);
@@ -640,4 +653,13 @@ void Job::write(const uint8_t* data, size_t len)
 {
     MutexLocker locker(&state.stdinMutex);
     mStdinBuffer.add(data, len);
+}
+
+void Job::close()
+{
+    {
+        MutexLocker locker(&state.stdinMutex);
+        mStdinClosed = true;
+    }
+    state.reader->wakeup();
 }

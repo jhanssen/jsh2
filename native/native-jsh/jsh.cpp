@@ -295,6 +295,11 @@ NAN_METHOD(Write) {
     }
 }
 
+NAN_METHOD(Close) {
+    auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
+    job->close();
+}
+
 NAN_METHOD(SetMode) {
     auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
     if (!info.Length()) {
@@ -357,6 +362,7 @@ NAN_MODULE_INIT(Initialize) {
         Nan::SetPrototypeMethod(ctor, "on", job::On);
         Nan::SetPrototypeMethod(ctor, "start", job::Start);
         Nan::SetPrototypeMethod(ctor, "write", job::Write);
+        Nan::SetPrototypeMethod(ctor, "write", job::Close);
         Nan::SetPrototypeMethod(ctor, "setMode", job::SetMode);
 
         auto ctorFunc = Nan::GetFunction(ctor).ToLocalChecked();
