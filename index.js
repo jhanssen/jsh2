@@ -1,4 +1,4 @@
-/*global require*/
+/*global require,process*/
 
 "use strict";
 
@@ -9,6 +9,16 @@ const nodeCleanup = require('node-cleanup');
 nodeCleanup(() => {
     nativeJsh.deinit();
 });
+
+function loadrc()
+{
+    const homedir = require('homedir')();
+    const rc = require(`${homedir}/.config/jsh`);
+    let jsh = {
+        commands: require("./lib/commands")
+    };
+    rc(jsh);
+}
 
 const CodeRunner = require("./lib/coderunner/index");
 const runner = new CodeRunner();
@@ -23,6 +33,8 @@ const runner = new CodeRunner();
     builtins.init();
     if (native.interactive) {
         console.run(runner);
+
+        loadrc();
     } else {
         // we'll want to read arguments at this point and execute commands
     }
