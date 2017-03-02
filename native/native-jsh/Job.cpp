@@ -523,7 +523,6 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
         // I really have NO idea why I have to do this but it seems to fix issues
 
         int dupped = dup(STDIN_FILENO);
-        ::close(STDIN_FILENO);
         dup2(dupped, STDIN_FILENO);
         ::close(dupped);
     }
