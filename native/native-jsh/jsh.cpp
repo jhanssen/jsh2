@@ -102,41 +102,52 @@ public:
     NanJob(std::shared_ptr<Job>&& j)
         : job(std::move(j)), id(nextId++)
     {
-        auto onout = [](const auto& /*job*/, auto& buffer, auto cb) {
-            Nan::HandleScope scope;
-            auto data = buffer.readAll();
-            auto nodeBuffer = v8::Local<v8::Value>::Cast(Nan::CopyBuffer(reinterpret_cast<char*>(&data[0]), data.size()).ToLocalChecked());
-            if (!cb->IsEmpty())
-                cb->Call(1, &nodeBuffer);
+        dead = std::make_shared<int>();
+        std::weak_ptr<int> weak = dead;
+        auto onout = [weak](const auto& /*job*/, auto& buffer, auto cb) {
+            if (std::shared_ptr<int> d = weak.lock()) {
+                Nan::HandleScope scope;
+                auto data = buffer.readAll();
+                auto nodeBuffer = v8::Local<v8::Value>::Cast(Nan::CopyBuffer(reinterpret_cast<char*>(&data[0]), data.size()).ToLocalChecked());
+                if (!cb->IsEmpty())
+                    cb->Call(1, &nodeBuffer);
+            }
         };
 
         // apparently we can't bind Nan::Callback as value
         job->stdout().on(bind(onout, _1, _2, &onStdOut));
         job->stderr().on(bind(onout, _1, _2, &onStdErr));
 
-        job->stateChanged().on(bind([this](const auto& job, auto state, int status, auto cb) {
-                    Nan::HandleScope scope;
-                    if (!cb->IsEmpty()) {
-                        std::vector<v8::Local<v8::Value> > ret;
-                        ret.push_back(v8::Local<v8::Value>::Cast(Nan::New<v8::Uint32>(state)));
-                        ret.push_back(v8::Local<v8::Value>::Cast(Nan::New<v8::Int32>(status)));
-                        cb->Call(ret.size(), &ret[0]);
+        job->stateChanged().on(bind([weak, this](const auto& job, auto state, int status, auto cb) {
+                    if (std::shared_ptr<int> d = weak.lock()) {
+                        Nan::HandleScope scope;
+                        if (!cb->IsEmpty()) {
+                            std::vector<v8::Local<v8::Value> > ret;
+                            ret.push_back(v8::Local<v8::Value>::Cast(Nan::New<v8::Uint32>(state)));
+                            ret.push_back(v8::Local<v8::Value>::Cast(Nan::New<v8::Int32>(status)));
+                            cb->Call(ret.size(), &ret[0]);
+                        }
+                        if (state == Job::Terminated)
+                            this->job.reset();
                     }
-                    if (state == Job::Terminated)
-                        this->job.reset();
                 }, _1, _2, _3, &onStateChanged));
     }
     ~NanJob()
     {
-        job->stdout().off();
-        job->stderr().off();
-        job->stateChanged().off();
+        if (job) {
+            job->stdout().off();
+            job->stderr().off();
+            job->stateChanged().off();
+        }
     }
 
     void Wrap(const v8::Local<v8::Object>& object)
     {
         Nan::ObjectWrap::Wrap(object);
     }
+
+    // hack, we can capture a weak of this to determine if we're destroyed
+    std::shared_ptr<int> dead;
 
     std::shared_ptr<Job> job;
     uint32_t id;
