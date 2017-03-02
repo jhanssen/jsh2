@@ -13,11 +13,15 @@ nodeCleanup(() => {
 function loadrc()
 {
     const homedir = require('homedir')();
-    const rc = require(`${homedir}/.config/jsh`);
-    let jsh = {
-        commands: require("./lib/commands")
-    };
-    rc(jsh);
+    try {
+        const rc = require(`${homedir}/.config/jsh`);
+        let jsh = {
+            commands: require("./lib/commands")
+        };
+        rc(jsh);
+    } catch (e) {
+        console.log("no rc file");
+    }
 }
 
 const CodeRunner = require("./lib/coderunner/index");
