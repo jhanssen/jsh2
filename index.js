@@ -24,7 +24,7 @@ function loadrc()
         };
         rc(jsh);
     } catch (e) {
-        console.log("no rc file", e);
+        //console.log("no rc file", e);
     }
 }
 
