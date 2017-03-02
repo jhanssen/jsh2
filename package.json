@@ -15,7 +15,7 @@
     "homedir": "^0.6.0",
     "minimatch": "^3.0.3",
     "minimist": "^1.2.0",
-    "native-readline": "1.0.6",
+    "native-readline": "1.0.7",
     "node-cleanup": "^2.1.2",
     "vm2": "^3.2.0"
   }
