@@ -14,7 +14,7 @@ function loadrc()
 {
     const homedir = require('homedir')();
     try {
-        const rc = require(`${homedir}/.config/jsh`);
+        const rc = require(`${homedir}/.config/jshrc`);
         let jsh = {
             commands: require("./lib/commands")
         };
