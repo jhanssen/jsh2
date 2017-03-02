@@ -447,8 +447,9 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
         pid_t pid = getpid();
         if (mPgid == 0) mPgid = pid;
         setpgid(pid, mPgid);
-        if (m == Foreground)
+        if (m == Foreground) {
             tcsetpgrp(STDIN_FILENO, mPgid);
+        }
     }
 
     signal(SIGINT, SIG_DFL);
@@ -517,6 +518,15 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
     // FILE* f = fopen("/tmp/jshproc.txt", "a");
     // fprintf(f, "going to run '%s'\n", resolved.c_str());
     // fclose(f);
+
+    if (in == STDIN_FILENO) {
+        // I really have NO idea why I have to do this but it seems to fix issues
+
+        int dupped = dup(STDIN_FILENO);
+        ::close(STDIN_FILENO);
+        dup2(dupped, STDIN_FILENO);
+        ::close(dupped);
+    }
 
     execve(resolved.c_str(), const_cast<char*const*>(argv), envp);
 
@@ -609,12 +619,15 @@ void Job::start(Mode m, uint8_t fdmode)
         pid = fork();
         if (pid == 0) {
             // child
-            if (mStdin != -1)
+            if (mStdin != -1) {
                 ::close(mStdin);
-            if (mStdout != -1)
+            }
+            if (mStdout != -1) {
                 ::close(mStdout);
-            if (mStderr != -1)
+            }
+            if (mStderr != -1) {
                 ::close(mStderr);
+            }
             launch(proc, in, out, err, m, is_interactive);
         } else if (pid > 0) {
             // parent
@@ -628,18 +641,22 @@ void Job::start(Mode m, uint8_t fdmode)
             // sad!
         }
 
-        if (in != STDIN_FILENO)
+        if (in != STDIN_FILENO) {
             ::close(in);
-        if (out != STDOUT_FILENO)
+        }
+        if (out != STDOUT_FILENO) {
             ::close(out);
+        }
 
         in = p[0];
         ++proc;
     }
-    if (in != mStdout && in != STDIN_FILENO)
+    if (in != mStdout && in != STDIN_FILENO) {
         ::close(in);
-    if (err != -1 && err != STDERR_FILENO)
+    }
+    if (err != -1 && err != STDERR_FILENO) {
         ::close(err);
+    }
 
     if (is_interactive)
         setMode(m, false);
