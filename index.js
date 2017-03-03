@@ -8,41 +8,44 @@ process.on('uncaughtException', (err) => {
 
 const nativeJsh = require("native-jsh");
 const native = nativeJsh.init();
+const homedir = require('homedir')();
 
-const nodeCleanup = require('node-cleanup');
-nodeCleanup(() => {
-    nativeJsh.deinit();
-});
+(() => {
+    const nodeCleanup = require('node-cleanup');
+    nodeCleanup(() => {
+        console.stop();
+        nativeJsh.deinit();
+    });
 
-function loadrc()
-{
-    const homedir = require('homedir')();
-    try {
-        const rc = require(`${homedir}/.config/jshrc`);
-        let jsh = {
-            commands: require("./lib/commands")
-        };
-        rc(jsh);
-    } catch (e) {
-        //console.log("no rc file", e);
+    function loadrc()
+    {
+        try {
+            const rc = require(`${homedir}/.config/jshrc`);
+            let jsh = {
+                commands: require("./lib/commands")
+            };
+            rc(jsh);
+        } catch (e) {
+            //console.log("no rc file", e);
+        }
     }
-}
 
-const CodeRunner = require("./lib/coderunner/index");
-const runner = new CodeRunner();
-//console.log(jsh.commands);
+    const CodeRunner = require("./lib/coderunner/index");
+    const runner = new CodeRunner();
+    //console.log(jsh.commands);
 
-const console = require("./lib/console");
-const commands = require("./lib/commands");
-const builtins = require("./lib/builtins");
+    const console = require("./lib/console");
+    const commands = require("./lib/commands");
+    const builtins = require("./lib/builtins");
 
-commands.init();
-builtins.init();
+    commands.init();
+    builtins.init();
 
-if (native.interactive) {
-    console.run(runner);
+    if (native.interactive) {
+        console.run(runner, `${homedir}/.jsh_history`);
 
-    loadrc();
-} else {
-    // we'll want to read arguments at this point and execute commands
-}
+        loadrc();
+    } else {
+        // we'll want to read arguments at this point and execute commands
+    }
+})();
