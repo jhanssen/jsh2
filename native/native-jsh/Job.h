@@ -59,7 +59,7 @@ public:
 
 private:
     void updateState(Process& pid, int status);
-    void launch(Process* proc, int in, int out, int err, Mode m, bool is_interactive);
+    void launch(Process* proc, int in, int out, int err, int notif, Mode m, bool is_interactive);
 
 private:
     std::string mCommand;

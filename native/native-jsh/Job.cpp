@@ -35,8 +35,9 @@ public:
     }
     ~JobReader()
     {
-        ::close(mPipe[0]);
-        ::close(mPipe[1]);
+        int e;
+        EINTRWRAP(e, ::close(mPipe[0]));
+        EINTRWRAP(e, ::close(mPipe[1]));
     }
 
     void add(const std::shared_ptr<Job>& job)
@@ -192,7 +193,7 @@ void JobReader::run()
                                         if (job->mStdinClosed) {
                                             if (jobdata.stdin != STDIN_FILENO) {
                                                 // printf("closed stdin %d\n", jobdata.stdin);
-                                                ::close(jobdata.stdin);
+                                                EINTRWRAP(e, ::close(jobdata.stdin));
                                             }
                                             jobdata.stdin = -1;
                                             jobdata.needsWrite = false;
@@ -236,6 +237,7 @@ void JobReader::run()
                 } else {
                     // printf("no pendingwrite\n");
                     // we might have more data on stdin
+                    int e;
                     if (std::shared_ptr<Job> job = r.first.lock()) {
                         MutexLocker locker(&state.stdinMutex);
                         if (!job->mStdinBuffer.empty()) {
@@ -245,7 +247,7 @@ void JobReader::run()
                             // printf("wanting to close\n");
                             if (jobdata.stdin != STDIN_FILENO) {
                                 // printf("closed stdin %d\n", jobdata.stdin);
-                                ::close(jobdata.stdin);
+                                EINTRWRAP(e, ::close(jobdata.stdin));
                             }
                             jobdata.stdin = -1;
                         }
@@ -441,7 +443,7 @@ void Job::setMode(Mode m, bool resume)
     mMode = m;
 }
 
-void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_interactive)
+void Job::launch(Process* proc, int in, int out, int err, int notif, Mode m, bool is_interactive)
 {
     if (is_interactive) {
         pid_t pid = getpid();
@@ -452,6 +454,7 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
         }
     }
 
+    int e;
     signal(SIGINT, SIG_DFL);
     signal(SIGQUIT, SIG_DFL);
     signal(SIGTSTP, SIG_DFL);
@@ -460,16 +463,16 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
     signal(SIGCHLD, SIG_DFL);
 
     if (in != STDIN_FILENO) {
-        dup2(in, STDIN_FILENO);
-        ::close(in);
+        EINTRWRAP(e, dup2(in, STDIN_FILENO));
+        EINTRWRAP(e, ::close(in));
     }
     if (out != STDOUT_FILENO) {
-        dup2(out, STDOUT_FILENO);
-        ::close(out);
+        EINTRWRAP(e, dup2(out, STDOUT_FILENO));
+        EINTRWRAP(e, ::close(out));
     }
     if (err != STDERR_FILENO) {
-        dup2(err, STDERR_FILENO);
-        ::close(err);
+        EINTRWRAP(e, dup2(err, STDERR_FILENO));
+        EINTRWRAP(e, ::close(err));
     }
 
     // build argv and envp
@@ -522,12 +525,18 @@ void Job::launch(Process* proc, int in, int out, int err, Mode m, bool is_intera
     if (in == STDIN_FILENO) {
         // I really have NO idea why I have to do this but it seems to fix issues
 
-        int dupped = dup(STDIN_FILENO);
-        dup2(dupped, STDIN_FILENO);
-        ::close(dupped);
+        int dupped;
+        EINTRWRAP(dupped, dup(STDIN_FILENO));
+        EINTRWRAP(e, dup2(dupped, STDIN_FILENO));
+        EINTRWRAP(e, ::close(dupped));
     }
 
     execve(resolved.c_str(), const_cast<char*const*>(argv), envp);
+
+    // notify parent
+    char c = 1;
+    EINTRWRAP(e, ::write(notif, &c, 1));
+    EINTRWRAP(e, ::close(notif));
 
     // FILE* f2 = fopen("/tmp/jshproc.txt", "a");
     // fprintf(f2, "but failed miserably %d\n", errno);
@@ -538,31 +547,32 @@ void Job::start(Mode m, uint8_t fdmode)
 {
     {
         mIoClosed.on([](const std::shared_ptr<Job>& job, Job::Io io) {
-                    switch (io) {
-                    case Job::Stdout:
-                        if (job->mStdout != -1) {
-                            ::close(job->mStdout);
-                            job->mStdout = -1;
-                        }
-                        break;
-                    case Job::Stderr:
-                        if (job->mStderr != -1) {
-                            ::close(job->mStderr);
-                            job->mStderr = -1;
-                        }
-                        break;
+                int e;
+                switch (io) {
+                case Job::Stdout:
+                    if (job->mStdout != -1) {
+                        EINTRWRAP(e, ::close(job->mStdout));
+                        job->mStdout = -1;
                     }
-                    if (job->isIoClosed()) {
-                        if (job->mStdin != -1) {
-                            ::close(job->mStdin);
-                            job->mStdin = -1;
-                        }
-                        if (job->isTerminated()) {
-                            job->stateChanged()(job, Job::Terminated, job->status());
-                            // printf("erasing from jobs(2)\n");
-                            sJobs.erase(job);
-                        }
+                    break;
+                case Job::Stderr:
+                    if (job->mStderr != -1) {
+                        EINTRWRAP(e, ::close(job->mStderr));
+                        job->mStderr = -1;
                     }
+                    break;
+                }
+                if (job->isIoClosed()) {
+                    if (job->mStdin != -1) {
+                        EINTRWRAP(e, ::close(job->mStdin));
+                        job->mStdin = -1;
+                    }
+                    if (job->isTerminated()) {
+                        job->stateChanged()(job, Job::Terminated, job->status());
+                        // printf("erasing from jobs(2)\n");
+                        sJobs.erase(job);
+                    }
+                }
             });
     }
 
@@ -603,6 +613,7 @@ void Job::start(Mode m, uint8_t fdmode)
         state.reader->add(shared_from_this());
 
     pid_t pid;
+    int e;
     Process* start = &mProcs[0];
     Process* proc = start;
     Process* end = proc + mProcs.size();
@@ -615,19 +626,32 @@ void Job::start(Mode m, uint8_t fdmode)
         }
 
         // printf("forking\n");
+
+        // we'll need to notify the parent if we can't exec,
+        // create a pipe with CLOEXEC and write to it if
+        // we fail
+
+        int runpipe[2];
+        ::pipe(runpipe);
+
         pid = fork();
         if (pid == 0) {
+            // close read end of runpipe
+            EINTRWRAP(e, ::close(runpipe[0]));
+            // make write end cloexec
+            fcntl(runpipe[1], F_SETFD, fcntl(runpipe[1], F_GETFD) | FD_CLOEXEC);
+
             // child
             if (mStdin != -1) {
-                ::close(mStdin);
+                EINTRWRAP(e, ::close(mStdin));
             }
             if (mStdout != -1) {
-                ::close(mStdout);
+                EINTRWRAP(e, ::close(mStdout));
             }
             if (mStderr != -1) {
-                ::close(mStderr);
+                EINTRWRAP(e, ::close(mStderr));
             }
-            launch(proc, in, out, err, m, is_interactive);
+            launch(proc, in, out, err, runpipe[1], m, is_interactive);
         } else if (pid > 0) {
             // parent
             proc->mPid = pid;
@@ -636,25 +660,49 @@ void Job::start(Mode m, uint8_t fdmode)
                     mPgid = pid;
                 setpgid(pid, mPgid);
             }
+
+            // close write end of pipe and select on the read end
+            EINTRWRAP(e, ::close(runpipe[1]));
+            for (;;) {
+                fd_set rdfds;
+                FD_ZERO(&rdfds);
+                FD_SET(runpipe[0], &rdfds);
+
+                EINTRWRAP(e, ::select(runpipe[0] + 1, &rdfds, 0, 0, 0));
+                if (e == -1) {
+                    // horrible, abort the job
+                } else {
+                    assert(e > 0);
+                    assert(FD_ISSET(runpipe[0], &rdfds));
+                    char c;
+                    EINTRWRAP(e, ::read(runpipe[0], &c, 1));
+                    if (e == -1 || e == 1) {
+                        // job went bad
+                    } else {
+                        // all good, pipe was closed
+                    }
+                }
+                EINTRWRAP(e, ::close(runpipe[0]));
+            }
         } else {
             // sad!
         }
 
         if (in != STDIN_FILENO) {
-            ::close(in);
+            EINTRWRAP(e, ::close(in));
         }
         if (out != STDOUT_FILENO) {
-            ::close(out);
+            EINTRWRAP(e, ::close(out));
         }
 
         in = p[0];
         ++proc;
     }
     if (in != mStdout && in != STDIN_FILENO) {
-        ::close(in);
+        EINTRWRAP(e, ::close(in));
     }
     if (err != -1 && err != STDERR_FILENO) {
-        ::close(err);
+        EINTRWRAP(e, ::close(err));
     }
 
     if (is_interactive)
