@@ -381,6 +381,7 @@ NAN_MODULE_INIT(Initialize) {
         Nan::Set(ctorFunc, Nan::New("Background").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Background));
         Nan::Set(ctorFunc, Nan::New("Stopped").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Stopped));
         Nan::Set(ctorFunc, Nan::New("Terminated").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Terminated));
+        Nan::Set(ctorFunc, Nan::New("Failed").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Failed));
         Nan::Set(ctorFunc, Nan::New("DupStdin").ToLocalChecked(), Nan::New<v8::Uint32>(Job::DupStdin));
         Nan::Set(ctorFunc, Nan::New("DupStdout").ToLocalChecked(), Nan::New<v8::Uint32>(Job::DupStdout));
         Nan::Set(ctorFunc, Nan::New("DupStderr").ToLocalChecked(), Nan::New<v8::Uint32>(Job::DupStderr));

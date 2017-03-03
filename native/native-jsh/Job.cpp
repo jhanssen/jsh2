@@ -538,6 +538,8 @@ void Job::launch(Process* proc, int in, int out, int err, int notif, Mode m, boo
     EINTRWRAP(e, ::write(notif, &c, 1));
     EINTRWRAP(e, ::close(notif));
 
+    exit(-1);
+
     // FILE* f2 = fopen("/tmp/jshproc.txt", "a");
     // fprintf(f2, "but failed miserably %d\n", errno);
     // fclose(f2);
@@ -633,13 +635,13 @@ void Job::start(Mode m, uint8_t fdmode)
 
         int runpipe[2];
         ::pipe(runpipe);
+        fcntl(runpipe[1], F_SETFD, fcntl(runpipe[1], F_GETFD) | FD_CLOEXEC);
 
         pid = fork();
         if (pid == 0) {
             // close read end of runpipe
             EINTRWRAP(e, ::close(runpipe[0]));
             // make write end cloexec
-            fcntl(runpipe[1], F_SETFD, fcntl(runpipe[1], F_GETFD) | FD_CLOEXEC);
 
             // child
             if (mStdin != -1) {
@@ -661,28 +663,44 @@ void Job::start(Mode m, uint8_t fdmode)
                 setpgid(pid, mPgid);
             }
 
+            bool ok = true;
             // close write end of pipe and select on the read end
             EINTRWRAP(e, ::close(runpipe[1]));
-            for (;;) {
-                fd_set rdfds;
-                FD_ZERO(&rdfds);
-                FD_SET(runpipe[0], &rdfds);
 
-                EINTRWRAP(e, ::select(runpipe[0] + 1, &rdfds, 0, 0, 0));
-                if (e == -1) {
-                    // horrible, abort the job
-                } else {
-                    assert(e > 0);
-                    assert(FD_ISSET(runpipe[0], &rdfds));
-                    char c;
-                    EINTRWRAP(e, ::read(runpipe[0], &c, 1));
-                    if (e == -1 || e == 1) {
-                        // job went bad
-                    } else {
-                        // all good, pipe was closed
-                    }
+            fd_set rdfds;
+            FD_ZERO(&rdfds);
+            FD_SET(runpipe[0], &rdfds);
+
+            EINTRWRAP(e, ::select(runpipe[0] + 1, &rdfds, 0, 0, 0));
+            if (e == -1) {
+                // horrible, abort the job
+                ok = false;
+            } else {
+                assert(e > 0);
+                assert(FD_ISSET(runpipe[0], &rdfds));
+                char c;
+                EINTRWRAP(e, ::read(runpipe[0], &c, 1));
+                if (e == -1 || e == 1) {
+                    // job went bad
+                    ok = false;
                 }
-                EINTRWRAP(e, ::close(runpipe[0]));
+            }
+            EINTRWRAP(e, ::close(runpipe[0]));
+
+            if (!ok) {
+                if (in != STDIN_FILENO) {
+                    EINTRWRAP(e, ::close(in));
+                }
+                if (out != STDOUT_FILENO) {
+                    EINTRWRAP(e, ::close(out));
+                }
+
+                auto job = shared_from_this();
+                mIoClosed.off();
+                mStateChanged.async(job, Failed, 0);
+                Job::sJobs.erase(job);
+
+                break;
             }
         } else {
             // sad!

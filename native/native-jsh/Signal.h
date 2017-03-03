@@ -22,6 +22,9 @@ public:
     template<typename... Args>
     void operator()(Args&&... args) const;
 
+    template<typename... Args>
+    void async(Args&&... args) const;
+
 private:
     std::unordered_map<Key, Functor> mFuncs;
     Mode mMode;
@@ -85,6 +88,20 @@ void Signal<Functor>::operator()(Args&&... args) const
             std::tuple<typename std::remove_reference<Args>::type...> tup(std::forward<Args>(args)...);
             apply(tup, f.second);
         }
+    }
+}
+
+template<typename Functor>
+template<typename... Args>
+void Signal<Functor>::async(Args&&... args) const
+{
+    std::unordered_map<Key, Functor> funcs;
+    {
+        MutexLocker locker(&mMutex);
+        funcs = mFuncs;
+    }
+    for (auto& f : funcs) {
+        call(SignalBase::Call<Functor, Args...>(std::move(f.second), std::forward<Args>(args)...));
     }
 }
 

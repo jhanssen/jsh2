@@ -50,7 +50,7 @@ public:
     static void init();
     static void deinit();
 
-    enum State { Stopped, Terminated };
+    enum State { Stopped, Terminated, Failed };
     enum Io { Stdout, Stderr };
     Signal<std::function<void(const std::shared_ptr<Job>&, State, int)> >& stateChanged() { return mStateChanged; }
     Signal<std::function<void(const std::shared_ptr<Job>&, Buffer&)> >& stdout() { return mStdoutSignal; }
