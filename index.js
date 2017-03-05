@@ -45,6 +45,8 @@ const homedir = require('homedir')();
         console.run(runner, `${homedir}/.jsh_history`);
 
         loadrc();
+
+        console.rehash();
     } else {
         // we'll want to read arguments at this point and execute commands
     }
