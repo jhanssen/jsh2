@@ -1,6 +1,8 @@
 #include <nan.h>
 #include <unistd.h>
 #include <signal.h>
+#include <pwd.h>
+#include <sys/types.h>
 #include "Job.h"
 #include "Process.h"
 #include "SignalBase.h"
@@ -92,6 +94,37 @@ NAN_METHOD(restore) {
         Nan::ThrowError("Unable to set terminal attributes for terminal");
         return;
     }
+}
+
+NAN_METHOD(users) {
+    std::vector<v8::Local<v8::Object> > objs;
+
+    struct passwd* entry;
+    for (;;) {
+        entry = getpwent();
+        if (!entry) {
+            endpwent();
+            break;
+        }
+        auto obj = Nan::New<v8::Object>();
+        obj->Set(Nan::New("name").ToLocalChecked(), Nan::New(entry->pw_name).ToLocalChecked());
+        obj->Set(Nan::New("uid").ToLocalChecked(), Nan::New<v8::Uint32>(entry->pw_uid));
+        obj->Set(Nan::New("gid").ToLocalChecked(), Nan::New<v8::Uint32>(entry->pw_gid));
+        obj->Set(Nan::New("dir").ToLocalChecked(), Nan::New(entry->pw_dir).ToLocalChecked());
+        obj->Set(Nan::New("shell").ToLocalChecked(), Nan::New(entry->pw_shell).ToLocalChecked());
+        objs.push_back(std::move(obj));
+    }
+
+    auto ret = Nan::New<v8::Array>(objs.size());
+    uint32_t idx = 0;
+    auto obj = objs.cbegin();
+    const auto end = objs.cend();
+    while (obj != end) {
+        ret->Set(idx, std::move(*obj));
+        ++obj;
+        ++idx;
+    }
+    info.GetReturnValue().Set(ret);
 }
 
 namespace job {
@@ -361,6 +394,7 @@ NAN_MODULE_INIT(Initialize) {
     NAN_EXPORT(target, init);
     NAN_EXPORT(target, deinit);
     NAN_EXPORT(target, restore);
+    NAN_EXPORT(target, users);
 
     {
         auto cname = Nan::New("Job").ToLocalChecked();
