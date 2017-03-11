@@ -17,12 +17,13 @@ const homedir = require('homedir')();
         nativeJsh.deinit();
     });
 
-    function loadrc()
+    function loadrc(console)
     {
         try {
             const rc = require(`${homedir}/.config/jshrc`);
             let jsh = {
-                commands: require("./lib/commands")
+                commands: require("./lib/commands"),
+                setPrompt: func => { console.setPrompt(func); }
             };
             rc(jsh);
         } catch (e) {
@@ -44,7 +45,7 @@ const homedir = require('homedir')();
     if (native.interactive) {
         console.run(runner, `${homedir}/.jsh_history`);
 
-        loadrc();
+        loadrc(console);
 
         console.rehash();
     } else {
