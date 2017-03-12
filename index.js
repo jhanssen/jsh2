@@ -23,6 +23,7 @@ const homedir = require('homedir')();
             const rc = require(`${homedir}/.config/jshrc`);
             let jsh = {
                 commands: require("./lib/commands"),
+                completions: require("./lib/completions"),
                 setPrompt: func => { console.setPrompt(func); }
             };
             rc(jsh);
