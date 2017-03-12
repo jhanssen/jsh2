@@ -151,14 +151,16 @@ public:
         job->stdout().on(bind(onout, _1, _2, &onStdOut));
         job->stderr().on(bind(onout, _1, _2, &onStdErr));
 
-        job->stateChanged().on(bind([weak, this](const auto& job, auto state, int status, auto cb) {
+        job->stateChanged().on(bind([weak, this](const auto& job, auto state, int status, auto cbs) {
                     if (std::shared_ptr<int> d = weak.lock()) {
                         Nan::HandleScope scope;
-                        if (!cb->IsEmpty()) {
-                            std::vector<v8::Local<v8::Value> > ret;
-                            ret.push_back(v8::Local<v8::Value>::Cast(Nan::New<v8::Uint32>(state)));
-                            ret.push_back(v8::Local<v8::Value>::Cast(Nan::New<v8::Int32>(status)));
-                            cb->Call(ret.size(), &ret[0]);
+                        for (auto cb : *cbs) {
+                            if (!cb->IsEmpty()) {
+                                std::vector<v8::Local<v8::Value> > ret;
+                                ret.push_back(v8::Local<v8::Value>::Cast(Nan::New<v8::Uint32>(state)));
+                                ret.push_back(v8::Local<v8::Value>::Cast(Nan::New<v8::Int32>(status)));
+                                cb->Call(ret.size(), &ret[0]);
+                            }
                         }
                         if (state == Job::Terminated)
                             this->job.reset();
@@ -185,7 +187,8 @@ public:
     std::shared_ptr<Job> job;
     uint32_t id;
 
-    Nan::Callback onStdOut, onStdErr, onStateChanged;
+    Nan::Callback onStdOut, onStdErr;
+    std::vector<std::shared_ptr<Nan::Callback> > onStateChanged;
 
     static uint32_t nextId;
 };
@@ -351,7 +354,7 @@ NAN_METHOD(SetMode) {
         return;
     }
     if (!info[0]->IsUint32()) {
-        Nan::ThrowError("Job.start takes a mode (number) argument");
+        Nan::ThrowError("Job.setMode takes a mode (number) argument");
         return;
     }
     Job::Mode m;
@@ -370,6 +373,13 @@ NAN_METHOD(SetMode) {
     job->setMode(m, true);
 }
 
+NAN_METHOD(Command) {
+    auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
+    const auto& cmd = job->command();
+    if (!cmd.empty())
+        info.GetReturnValue().Set(Nan::New(cmd.c_str()).ToLocalChecked());
+}
+
 NAN_METHOD(On) {
     auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder());
     if (info.Length() >= 2 && info[0]->IsString() && info[1]->IsFunction()) {
@@ -379,7 +389,7 @@ NAN_METHOD(On) {
         } else if (str == "stderr") {
             job->onStdErr.Reset(v8::Local<v8::Function>::Cast(info[1]));
         } else if (str == "stateChanged") {
-            job->onStateChanged.Reset(v8::Local<v8::Function>::Cast(info[1]));
+            job->onStateChanged.push_back(std::make_shared<Nan::Callback>(v8::Local<v8::Function>::Cast(info[1])));
         } else {
             Nan::ThrowError("Invalid Job.on: " + str);
         }
@@ -409,6 +419,7 @@ NAN_MODULE_INIT(Initialize) {
         Nan::SetPrototypeMethod(ctor, "write", job::Write);
         Nan::SetPrototypeMethod(ctor, "close", job::Close);
         Nan::SetPrototypeMethod(ctor, "setMode", job::SetMode);
+        Nan::SetPrototypeMethod(ctor, "command", job::Command);
 
         auto ctorFunc = Nan::GetFunction(ctor).ToLocalChecked();
         Nan::Set(ctorFunc, Nan::New("Foreground").ToLocalChecked(), Nan::New<v8::Uint32>(Job::Foreground));

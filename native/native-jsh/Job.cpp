@@ -619,6 +619,10 @@ void Job::start(Mode m, uint8_t fdmode)
     Process* start = &mProcs[0];
     Process* proc = start;
     Process* end = proc + mProcs.size();
+
+    if (start != end)
+        mCommand = start->path();
+
     while (proc != end) {
         if (proc + 1 != end) {
             ::pipe(p);

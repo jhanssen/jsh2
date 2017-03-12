@@ -47,6 +47,8 @@ public:
     void setStatus(int status) { mStatus = status; }
     int status() const { return mStatus; }
 
+    std::string command() const { return mCommand; }
+
     static void init();
     static void deinit();
 
