@@ -30,8 +30,10 @@ public:
     {
         ::pipe(mPipe);
 
-        const int r = fcntl(mPipe[0], F_GETFL);
-        fcntl(mPipe[0], F_SETFL, r | O_NONBLOCK);
+        int r = fcntl(mPipe[0], F_GETFL);
+        fcntl(mPipe[0], F_SETFL, r | O_NONBLOCK | O_CLOEXEC);
+        r = fcntl(mPipe[1], F_GETFL);
+        fcntl(mPipe[1], F_SETFL, r | O_CLOEXEC);
     }
     ~JobReader()
     {
