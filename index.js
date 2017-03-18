@@ -11,20 +11,21 @@ const native = nativeJsh.init();
 const homedir = require('homedir')();
 
 (() => {
-    const nodeCleanup = require('node-cleanup');
-    nodeCleanup(() => {
-        console.stop();
+    let oldexit = process.exit;
+    process.exit = function(code) {
+        jshconsole.stop();
         nativeJsh.deinit();
-    });
+        oldexit.call(this, code);
+    };
 
-    function loadrc(console)
+    function loadrc(jshconsole)
     {
         try {
             const rc = require(`${homedir}/.config/jshrc`);
             let jsh = {
                 commands: require("./lib/commands"),
                 completions: require("./lib/completions"),
-                setPrompt: func => { console.setPrompt(func); }
+                setPrompt: func => { jshconsole.setPrompt(func); }
             };
             rc(jsh);
         } catch (e) {
@@ -36,7 +37,7 @@ const homedir = require('homedir')();
     const runner = new CodeRunner();
     //console.log(jsh.commands);
 
-    const console = require("./lib/console");
+    const jshconsole = require("./lib/console");
     const commands = require("./lib/commands");
     const builtins = require("./lib/builtins");
 
@@ -44,11 +45,11 @@ const homedir = require('homedir')();
     builtins.init();
 
     if (native.interactive) {
-        console.run(runner, `${homedir}/.jsh_history`);
+        jshconsole.run(runner, `${homedir}/.jsh_history`);
 
-        loadrc(console);
+        loadrc(jshconsole);
 
-        console.rehash();
+        jshconsole.rehash();
     } else {
         // we'll want to read arguments at this point and execute commands
     }
