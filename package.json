@@ -8,8 +8,12 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "postinstall": "./postinstall.sh"
   },
-  "author": "",
+  "author": "Jan Erik Hanssen",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jhanssen/jsh2/"
+  },
   "dependencies": {
     "bash-parser": "^0.4.0",
     "binarysearch": "^1.0.0",
