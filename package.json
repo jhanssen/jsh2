@@ -17,6 +17,7 @@
   "dependencies": {
     "bash-parser": "^0.4.0",
     "binarysearch": "^1.0.0",
+    "glob": "^7.1.1",
     "homedir": "^0.6.0",
     "minimatch": "^3.0.3",
     "minimist": "^1.2.0",
