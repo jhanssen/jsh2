@@ -25,7 +25,8 @@ const homedir = require('homedir')();
             let jsh = {
                 commands: require("./lib/commands"),
                 completions: require("./lib/completions"),
-                setPrompt: func => { jshconsole.setPrompt(func); }
+                setPrompt: func => { jshconsole.setPrompt(func); },
+                homedir: homedir
             };
             rc(jsh);
         } catch (e) {
