@@ -18,24 +18,6 @@ const homedir = require('homedir')();
         oldexit.call(this, code);
     };
 
-    function loadrc(jshconsole)
-    {
-        try {
-            const rc = require(`${homedir}/.config/jshrc`);
-            let jsh = {
-                commands: require("./lib/commands"),
-                completions: require("./lib/completions"),
-                setPrompt: func => { jshconsole.setPrompt(func); },
-                homedir: homedir
-            };
-            rc(jsh);
-        } catch (e) {
-            //console.log("no rc file", e);
-        }
-    }
-
-    const CodeRunner = require("./lib/coderunner/index");
-    const runner = new CodeRunner();
     //console.log(jsh.commands);
 
     const jshconsole = require("./lib/console");
@@ -46,9 +28,8 @@ const homedir = require('homedir')();
     builtins.init();
 
     if (native.interactive) {
-        jshconsole.run(runner, `${homedir}/.jsh_history`);
-
-        loadrc(jshconsole);
+        jshconsole.run(`${homedir}/.jsh_history`);
+        require("./lib/loadrc")(jshconsole);
 
         jshconsole.rehash();
     } else {
