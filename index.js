@@ -29,9 +29,9 @@ const homedir = require('homedir')();
 
     if (native.interactive) {
         jshconsole.run(`${homedir}/.jsh_history`);
-        require("./lib/loadrc")(jshconsole);
-
-        jshconsole.rehash();
+        require("./lib/loadrc")(jshconsole).then(() => {
+            jshconsole.rehash();
+        });
     } else {
         // we'll want to read arguments at this point and execute commands
     }
