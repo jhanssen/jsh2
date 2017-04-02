@@ -7,6 +7,7 @@ process.on('uncaughtException', (err) => {
 });
 
 const nativeJsh = require("native-jsh");
+const nativeIpc = require("native-ipc");
 const native = nativeJsh.init();
 const homedir = require('homedir')();
 
@@ -15,6 +16,7 @@ const homedir = require('homedir')();
     process.exit = function(code) {
         jshconsole.stop();
         nativeJsh.deinit();
+        nativeIpc.stop();
         oldexit.call(this, code);
     };
 
