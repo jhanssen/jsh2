@@ -30,7 +30,7 @@ const homedir = require('homedir')();
     builtins.init();
 
     if (native.interactive) {
-        jshconsole.run(`${homedir}/.jsh_history`);
+        jshconsole.run(`${homedir}/.jsh_history`, `${homedir}/.jsh_history.js`);
         require("./lib/loadrc")(jshconsole).then(() => {
             jshconsole.rehash();
         });
