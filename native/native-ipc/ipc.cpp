@@ -527,9 +527,11 @@ NAN_METHOD(listen) {
         addr.sun_family = AF_UNIX;
         strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path)-1);
         if (bind(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == -1) {
+            EINTRWRAP(e, ::close(fd));
             info.GetReturnValue().Set(Nan::New<v8::Boolean>(false));
         } else {
             if (listen(fd, 5) == -1) {
+                EINTRWRAP(e, ::close(fd));
                 info.GetReturnValue().Set(Nan::New<v8::Boolean>(false));
             } else {
                 if (state.init(State::FD::Server, fd))
