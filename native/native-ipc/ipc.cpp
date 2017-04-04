@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <vector>
 #include <string>
+#include <utility>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -112,11 +113,14 @@ bool State::init(FD::Type type, int fd)
 
     uv_async_init(uv_default_loop(), &async, [](uv_async_t*) {
             std::vector<std::string> parsed;
+            int nc = 0, dc = 0;
             bool disconnected = false;
             {
                 MutexLocker locker(&state.mutex);
                 parsed = std::move(state.parsedDatas);
                 disconnected = state.disconnected;
+                std::swap(nc, state.newClients);
+                std::swap(dc, state.disconnectedClients);
             }
             for (const auto& p : parsed) {
                 state.runOn("data", p);
@@ -125,13 +129,14 @@ bool State::init(FD::Type type, int fd)
                 uv_thread_join(&state.thread);
                 state.cleanup();
                 state.runOn("disconnected");
+                return;
             }
-            while (state.newClients > 0) {
-                --state.newClients;
+            while (nc > 0) {
+                --nc;
                 state.runOn("newClient");
             }
-            while (state.disconnectedClients > 0) {
-                --state.disconnectedClients;
+            while (dc > 0) {
+                --dc;
                 state.runOn("disconnectedClient");
             }
         });
