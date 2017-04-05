@@ -152,8 +152,10 @@ void State::runOn(const std::string& name, int id, const std::string& data)
     if (!data.empty()) {
         values.push_back(v8::Local<v8::Value>::Cast(Nan::New(data.c_str()).ToLocalChecked()));
     }
+    log("State::runOn %s %d ('%s')\n", name.c_str(), id, data.empty() ? "" : data.c_str());
 
     const auto& o = state.ons[name];
+    log("State::runOn %zu handlers for %s\n", o.size(), name.c_str());
     for (const auto& cb : o) {
         if (!cb->IsEmpty()) {
             cb->Call(values.size(), &values[0]);
@@ -376,6 +378,7 @@ State::HandleState State::handleData(int fd)
     char buf[16384];
     int rd;
     EINTRWRAP(rd, ::read(fd, buf, sizeof(buf)));
+    log("State::handleData read %d bytes\n", rd);
     if (rd == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
         return Success;
     if (!rd)
@@ -384,21 +387,27 @@ State::HandleState State::handleData(int fd)
         return Failure;
     std::string& local = readdata[fd];
     local += std::string(buf, rd);
+    log("State::handleData parsing %zu bytes\n", local.size());
     parseData(fd, local);
     return Success;
 }
 
 void State::parseData(int fd, std::string& local)
 {
-    if (local.size() < 4)
+    if (local.size() < 4) {
+        log("State::parseData only got %zu bytes, wanted at least 4\n", local.size());
         return;
+    }
     // first 4 bytes is the number of bytes in the message
     uint32_t* ptr = reinterpret_cast<uint32_t*>(&local[0]);
     uint32_t num = ntohl(*ptr);
-    if (local.size() - 4 < num)
+    if (local.size() - 4 < num) {
+        log("State::parseData got %zu bytes, wanted %u\n", local.size() - 4, num);
         return;
+    }
     std::string parse = local.substr(4, num);
     local = local.substr(num + 4);
+    log("State::parseData, sending up '%s' (%zu)\n", parse.c_str(), parse.size());
 
     MutexLocker locker(&mutex);
     parsedDatas.push_back(std::make_pair(fd, std::move(parse)));
@@ -437,6 +446,7 @@ void State::wakeup()
 
 void State::write(const std::string& data, const std::unordered_set<int>& to)
 {
+    log("State::write wanting to write\n");
     MutexLocker locker(&mutex);
     union {
         uint32_t sz;
@@ -447,8 +457,10 @@ void State::write(const std::string& data, const std::unordered_set<int>& to)
 
     for (auto fd : fds) {
         if (fd.type == FD::Client) {
-            if (to.empty() || to.count(fd.fd) > 0)
+            if (to.empty() || to.count(fd.fd) > 0) {
+                log("State::write writing to %d\n", fd.fd);
                 writedata[fd.fd].push_back(ndata);
+            }
         }
     }
     wakeup();
@@ -505,7 +517,7 @@ NAN_METHOD(write) {
             for (uint32_t i = 0; i < toArray->Length(); ++i) {
                 if (!toArray->Get(i)->IsInt32())
                     continue;
-                to.insert(v8::Local<v8::Int32>::Cast(info[0])->Value());
+                to.insert(v8::Local<v8::Int32>::Cast(toArray->Get(i))->Value());
             }
         }
         const std::string data = *Nan::Utf8String(info[0]);
