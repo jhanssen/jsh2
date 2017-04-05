@@ -10,8 +10,6 @@
     }
 })();
 
-let ver = process.versions.node;
-
 process.on('uncaughtException', (err) => {
     console.error("uncaught exception", err);
 });
