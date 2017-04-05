@@ -2,6 +2,16 @@
 
 "use strict";
 
+(() => {
+    const semver = require("semver");
+    if (!semver.gte(process.versions.node, "7.6.0")) {
+        console.error("requires node >= 7.6.0");
+        process.exit();
+    }
+})();
+
+let ver = process.versions.node;
+
 process.on('uncaughtException', (err) => {
     console.error("uncaught exception", err);
 });
