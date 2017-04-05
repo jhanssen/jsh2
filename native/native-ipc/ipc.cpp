@@ -2,6 +2,7 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <string>
 #include <utility>
@@ -40,7 +41,7 @@ static void log(const char* fmt, ...)
 
 struct State {
     State()
-        : stopped(false), disconnected(false), newClients(0), disconnectedClients(0)
+        : stopped(false), disconnected(false)
     {
         wakeupPipe[0] = wakeupPipe[1] = -1;
     }
@@ -64,13 +65,13 @@ struct State {
 
     Mutex mutex;
     bool stopped, disconnected;
-    int newClients, disconnectedClients;
-    std::vector<std::string> parsedDatas;
+    std::vector<int> newClients, disconnectedClients;
+    std::vector<std::pair<int, std::string> > parsedDatas;
 
     void stop();
     void cleanup();
     void wakeup();
-    void write(const std::string& data);
+    void write(const std::string& data, const std::unordered_set<int>& to);
 
     std::unordered_map<std::string, std::vector<std::shared_ptr<Nan::Callback> > > ons;
 
@@ -81,10 +82,10 @@ private:
         Success
     };
     HandleState handleData(int fd);
-    void parseData(std::string& data);
+    void parseData(int fd, std::string& data);
     void run();
 
-    void runOn(const std::string& name, const std::string& data = std::string());
+    void runOn(const std::string& name, int id, const std::string& data = std::string());
 
     std::unordered_map<int, std::string> readdata;
     std::unordered_map<int, std::vector<std::string> > writedata;
@@ -112,51 +113,50 @@ bool State::init(FD::Type type, int fd)
     fcntl(wakeupPipe[1], F_SETFL, r | O_CLOEXEC);
 
     uv_async_init(uv_default_loop(), &async, [](uv_async_t*) {
-            std::vector<std::string> parsed;
-            int nc = 0, dc = 0;
+            std::vector<std::pair<int, std::string> > parsed;
+            std::vector<int> nc, dc;
             bool disconnected = false;
             {
                 MutexLocker locker(&state.mutex);
                 parsed = std::move(state.parsedDatas);
                 disconnected = state.disconnected;
-                std::swap(nc, state.newClients);
-                std::swap(dc, state.disconnectedClients);
+                nc = std::move(state.newClients);
+                dc = std::move(state.disconnectedClients);
             }
             for (const auto& p : parsed) {
-                state.runOn("data", p);
+                state.runOn("data", p.first, p.second);
             }
             if (disconnected) {
                 uv_thread_join(&state.thread);
                 state.cleanup();
-                state.runOn("disconnected");
+                state.runOn("disconnected", -1);
                 return;
             }
-            while (nc > 0) {
-                --nc;
-                state.runOn("newClient");
+            while (!nc.empty()) {
+                state.runOn("newClient", nc.back());
+                nc.pop_back();
             }
-            while (dc > 0) {
-                --dc;
-                state.runOn("disconnectedClient");
+            while (!dc.empty()) {
+                state.runOn("disconnectedClient", dc.back());
+                dc.pop_back();
             }
         });
     return empty;
 }
 
-void State::runOn(const std::string& name, const std::string& data)
+void State::runOn(const std::string& name, int id, const std::string& data)
 {
     Nan::HandleScope scope;
-    v8::Local<v8::Value> ret;
-    if (data.empty()) {
-        ret = Nan::Undefined();
-    } else {
-        ret = v8::Local<v8::Value>::Cast(Nan::New(data.c_str()).ToLocalChecked());
+    std::vector<v8::Local<v8::Value> > values;
+    values.push_back(v8::Local<v8::Value>::Cast(Nan::New<v8::Int32>(id)));
+    if (!data.empty()) {
+        values.push_back(v8::Local<v8::Value>::Cast(Nan::New(data.c_str()).ToLocalChecked()));
     }
 
     const auto& o = state.ons[name];
     for (const auto& cb : o) {
         if (!cb->IsEmpty()) {
-            cb->Call(1, &ret);
+            cb->Call(values.size(), &values[0]);
         }
     }
 }
@@ -317,7 +317,7 @@ void State::run()
                             while (fit != fend) {
                                 if (fit->fd == fd.fd) {
                                     log("State::run, handle read removed\n");
-                                    ++disconnectedClients;
+                                    disconnectedClients.push_back(fd.fd);
 
                                     fds.erase(fit);
                                     if (fds.size() <= 1) {
@@ -356,7 +356,7 @@ void State::run()
                             // push new client
                             MutexLocker locker(&mutex);
                             fds.push_back({ FD::Client, cl });
-                            ++newClients;
+                            newClients.push_back(cl);
                             uv_async_send(&async);
                         }
                         break; }
@@ -384,11 +384,11 @@ State::HandleState State::handleData(int fd)
         return Failure;
     std::string& local = readdata[fd];
     local += std::string(buf, rd);
-    parseData(local);
+    parseData(fd, local);
     return Success;
 }
 
-void State::parseData(std::string& local)
+void State::parseData(int fd, std::string& local)
 {
     if (local.size() < 4)
         return;
@@ -401,7 +401,7 @@ void State::parseData(std::string& local)
     local = local.substr(num + 4);
 
     MutexLocker locker(&mutex);
-    parsedDatas.push_back(parse);
+    parsedDatas.push_back(std::make_pair(fd, std::move(parse)));
     uv_async_send(&async);
 }
 
@@ -435,18 +435,20 @@ void State::wakeup()
     EINTRWRAP(e, ::write(wakeupPipe[1], &c, 1));
 }
 
-void State::write(const std::string& data)
+void State::write(const std::string& data, const std::unordered_set<int>& to)
 {
     MutexLocker locker(&mutex);
+    union {
+        uint32_t sz;
+        char buf[4];
+    } len;
+    len.sz = htonl(data.size());
+    std::string ndata = std::string(len.buf, 4) + data;
+
     for (auto fd : fds) {
         if (fd.type == FD::Client) {
-            union {
-                uint32_t sz;
-                char buf[4];
-            } len;
-            len.sz = htonl(data.size());
-            std::string ndata = std::string(len.buf, 4) + data;
-            writedata[fd.fd].push_back(ndata);
+            if (to.empty() || to.count(fd.fd) > 0)
+                writedata[fd.fd].push_back(ndata);
         }
     }
     wakeup();
@@ -497,8 +499,17 @@ NAN_METHOD(on) {
 
 NAN_METHOD(write) {
     if (info.Length() > 0 && info[0]->IsString()) {
+        std::unordered_set<int> to;
+        if (info.Length() > 1 && info[1]->IsArray()) {
+            auto toArray = v8::Local<v8::Array>::Cast(info[1]);
+            for (uint32_t i = 0; i < toArray->Length(); ++i) {
+                if (!toArray->Get(i)->IsInt32())
+                    continue;
+                to.insert(v8::Local<v8::Int32>::Cast(info[0])->Value());
+            }
+        }
         const std::string data = *Nan::Utf8String(info[0]);
-        state.write(data);
+        state.write(data, to);
     }
 }
 
