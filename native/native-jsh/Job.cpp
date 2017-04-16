@@ -477,6 +477,31 @@ void Job::launch(Process* proc, int in, int out, int err, int notif, Mode m, boo
         EINTRWRAP(e, ::close(err));
     }
 
+    // apply redirections
+    const auto& redirs = proc->redirs();
+    for (const auto redir : redirs) {
+        // if this is a redirect to a file, open it
+        int tofd;
+        if (!redir.file.empty()) {
+            const int oflag = O_WRONLY | O_CREAT | (redir.append ? O_APPEND : O_TRUNC);
+            tofd = open(redir.file.c_str(), oflag, 0666);
+            if (tofd == -1) {
+                // bad, notify parent
+                char c = 1;
+                EINTRWRAP(e, ::write(notif, &c, 1));
+                EINTRWRAP(e, ::close(notif));
+
+                exit(-1);
+            }
+        } else {
+            assert(redir.tofd != -1);
+            tofd = redir.tofd;
+        }
+        // dup
+        EINTRWRAP(e, dup2(tofd, redir.fromfd));
+        EINTRWRAP(e, ::close(tofd));
+    }
+
     // build argv and envp
     const auto& args = proc->args();
     const auto& environ = proc->environ();

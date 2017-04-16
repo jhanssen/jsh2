@@ -320,6 +320,75 @@ NAN_METHOD(Add) {
         }
     }
 
+    auto maybeRedirs = Nan::Get(obj, Nan::New("redirs").ToLocalChecked());
+    if (!maybeRedirs.IsEmpty()) {
+        auto redirs = maybeRedirs.ToLocalChecked();
+        if (redirs->IsArray()) {
+            auto redirsArray = v8::Local<v8::Array>::Cast(redirs);
+            Process::Redirects procRedirs;
+
+            const auto ioKey = Nan::New("io").ToLocalChecked();
+            const auto opKey = Nan::New("op").ToLocalChecked();
+            const auto fileKey = Nan::New("file").ToLocalChecked();
+
+            for (uint32_t i = 0; i < redirsArray->Length(); ++i) {
+                auto redir = redirsArray->Get(i);
+                if (!redir->IsObject()) {
+                    Nan::ThrowError("Job.add redirect needs to be an object");
+                    return;
+                }
+                auto redirObj = v8::Local<v8::Object>::Cast(redir);
+                if (!redirObj->Has(opKey) || !redirObj->Has(fileKey)) {
+                    Nan::ThrowError("Job.add invalid redirect");
+                    return;
+                }
+                auto opVal = redirObj->Get(opKey);
+                if (!opVal->IsString()) {
+                    Nan::ThrowError("Job.add redirect op needs to be a string");
+                    return;
+                }
+                auto fileVal = redirObj->Get(fileKey);
+                if (!fileVal->IsString()) {
+                    Nan::ThrowError("Job.add redirect file needs to be a string");
+                    return;
+                }
+                int fromfd = 1, tofd = -1;
+                bool append = false;
+                std::string fname;
+                const std::string op = *Nan::Utf8String(opVal);
+
+                if (op == ">&") {
+                    // file is a file descriptor
+                    char* end = 0;
+                    Nan::Utf8String utf8(fileVal);
+                    tofd = strtol(*utf8, &end, 10);
+                    if (tofd < 0 || !end || *end != '\0') {
+                        // bad
+                        Nan::ThrowError("Job.add redirect, file needs to be a positive number for >&");
+                        return;
+                    }
+                } else {
+                    // file is a file
+                    if (op == ">>")
+                        append = true;
+                    fname = *Nan::Utf8String(fileVal);
+                }
+
+                if (redirObj->Has(ioKey)) {
+                    auto ioVal = redirObj->Get(ioKey);
+                    if (!ioVal->IsInt32()) {
+                        Nan::ThrowError("Job.add redirect io needs to be an int");
+                        return;
+                    }
+                    fromfd = v8::Local<v8::Int32>::Cast(ioVal)->Value();
+                }
+                Process::Redirect procRedir = { fromfd, tofd, fname, append };
+                procRedirs.push_back(std::move(procRedir));
+            }
+            proc.setRedirects(std::move(procRedirs));
+        }
+    }
+
     auto job = Nan::ObjectWrap::Unwrap<NanJob>(info.Holder())->job;
     job->add(std::move(proc));
 }
